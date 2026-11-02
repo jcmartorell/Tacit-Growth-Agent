@@ -15,10 +15,12 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <span className="brand-tag">Growth</span>
         </div>
         <nav className="nav">
+          <Link href="/hoy">Hoy</Link>
           <Link href="/">Resumen</Link>
           <Link href="/prospectos">Prospectos</Link>
           <Link href="/contenido">Contenido</Link>
           <Link href="/costos">Costos de agentes</Link>
+          <Link href="/configuracion">Configuración</Link>
           <span className="soon">Métricas · Fase 5</span>
         </nav>
         <div className="sidebar-foot">

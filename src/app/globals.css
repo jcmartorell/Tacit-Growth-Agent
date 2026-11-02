@@ -87,3 +87,36 @@ tr:last-child td { border-bottom: 0; }
   .nav { flex-direction: row; flex-wrap: wrap; }
   .content { padding: 20px 16px; }
 }
+
+/* Fase 2: cola, mensajes, configuración */
+.small { font-size: 13px; }
+.btn-secondary { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.btn-secondary:hover { border-color: var(--mist); }
+.btn-danger { background: var(--paper); color: var(--error); border: 1px solid var(--line); }
+.as-button { display: inline-block; text-decoration: none; padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row-actions button { padding: 8px 12px; font-size: 14px; }
+.action { display: inline-flex; flex-direction: column; gap: 4px; }
+.inline-error { color: var(--error); font-size: 12px; }
+.queue { display: flex; flex-direction: column; gap: 12px; }
+.queue-item { display: flex; flex-direction: column; gap: 10px; }
+.queue-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.queue-name { font-weight: 600; text-decoration: none; }
+.queue-name:hover { text-decoration: underline; }
+.angle { margin: 0; padding: 8px 12px; border-left: 3px solid var(--pulse); background: var(--ok-bg); border-radius: 4px; font-size: 14px; }
+.message {
+  margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 15px;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px;
+}
+.config-form { max-width: 760px; }
+textarea {
+  font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; color: var(--ink); resize: vertical;
+}
+fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: var(--paper); }
+legend { font-weight: 600; padding: 0 6px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 15px; font-weight: 500; }
+.inline-fields { display: flex; gap: 12px; flex-wrap: wrap; }
+.inline-fields label { display: flex; flex-direction: column; gap: 4px; }
+.inline-fields input { width: 110px; }
+details summary { cursor: pointer; }

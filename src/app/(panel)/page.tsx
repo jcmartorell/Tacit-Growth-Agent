@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { countAll, countBy, monthCostUsd } from "@/lib/data";
+import { countQueue } from "@/lib/queue";
 
 export const dynamic = "force-dynamic";
 
 export default async function ResumenPage() {
-  const [prospects, listos, enviados, reuniones, postsPorAprobar, publicados, costo] = await Promise.all([
+  const [hoy, prospects, listos, enviados, reuniones, postsPorAprobar, publicados, costo] = await Promise.all([
+    countQueue(),
     countAll("prospects"),
     countBy("prospects", "listo"),
     countBy("prospects", "enviado"),
@@ -18,7 +21,11 @@ export default async function ResumenPage() {
       <h1>Resumen</h1>
       <p className="muted">Estado general del motor de growth.</p>
 
-      <h2>Prospección</h2>
+      <p className={hoy > 0 ? "alert alert-ok" : "muted"}>
+        {hoy > 0 ? <>Tienes {hoy} mensajes por enviar hoy. <Link href="/hoy">Ir a Hoy →</Link></> : "No hay mensajes pendientes por hoy."}
+      </p>
+
+      <h2 style={{ marginTop: 20 }}>Prospección</h2>
       <div className="cards">
         <Card label="Prospectos totales" value={prospects} />
         <Card label="Listos para enviar" value={listos} />

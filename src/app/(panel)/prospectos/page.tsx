@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { fmtDate, listProspects } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +9,10 @@ export default async function ProspectosPage() {
   return (
     <>
       <h1>Prospectos</h1>
-      <p className="muted">Personas traídas de Apollo. Las acciones de envío llegan en la Fase 2.</p>
+      <p className="muted">Todos los que trajo el motor, incluidos los descartados y su motivo.</p>
       <div className="table-wrap">
         {rows.length === 0 ? (
-          <div className="empty">Todavía no hay prospectos.</div>
+          <div className="empty">Todavía no hay prospectos. Corre el motor desde Configuración o espera a la corrida de mañana.</div>
         ) : (
           <table>
             <thead>
@@ -23,16 +24,15 @@ export default async function ProspectosPage() {
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td>
-                    {p.linkedin_url ? (
-                      <a href={p.linkedin_url} target="_blank" rel="noreferrer">{p.full_name}</a>
-                    ) : p.full_name}
-                  </td>
+                  <td><Link href={`/prospectos/${p.id}`}>{p.full_name}</Link></td>
                   <td>{p.title ?? "—"}</td>
                   <td>{p.company_name ?? "—"}</td>
                   <td>{p.company_size ?? "—"}</td>
                   <td>{p.country ?? "—"}</td>
-                  <td><span className="pill">{p.status}</span></td>
+                  <td>
+                    <span className="pill">{p.status}</span>
+                    {p.discard_reason && <div className="muted small">{p.discard_reason}</div>}
+                  </td>
                   <td>{fmtDate(p.created_at)}</td>
                 </tr>
               ))}

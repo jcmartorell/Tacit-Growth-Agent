@@ -44,7 +44,7 @@ export async function listProspects() {
   const db = createAdminClient();
   const { data, error } = await db
     .from("prospects")
-    .select("id, full_name, title, company_name, company_size, country, status, linkedin_url, created_at")
+    .select("id, full_name, title, company_name, company_size, country, status, discard_reason, linkedin_url, created_at")
     .order("created_at", { ascending: false })
     .limit(100);
   if (error) fail("prospects", error.message);
@@ -80,4 +80,27 @@ export function fmtDate(value: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+// Últimas corridas del motor (agente "motor")
+export async function listMotorRuns(limit = 10) {
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("agent_runs")
+    .select("id, status, detail, started_at, finished_at")
+    .eq("agent", "motor")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) fail("agent_runs", error.message);
+  return data ?? [];
+}
+
+// Qué variables de entorno están configuradas (solo sí/no, nunca el valor)
+export function envStatus() {
+  const has = (k: string) => Boolean(process.env[k] && process.env[k]!.trim());
+  return {
+    APOLLO_API_KEY: has("APOLLO_API_KEY"),
+    ANTHROPIC_API_KEY: has("ANTHROPIC_API_KEY"),
+    CRON_SECRET: has("CRON_SECRET"),
+  };
 }
