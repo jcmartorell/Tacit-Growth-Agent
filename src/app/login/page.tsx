@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <span className="brand-tag">Growth</span>
         </div>
         <h1>Entrar al panel</h1>
-        <p className="muted">Te enviamos un enlace de acceso a tu correo.</p>
+        <p className="muted">Entra con tu correo y contraseña.</p>
         {error && <p className="alert alert-error">{error}</p>}
         <LoginForm />
       </div>
