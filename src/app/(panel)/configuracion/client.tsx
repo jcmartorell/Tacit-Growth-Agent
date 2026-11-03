@@ -112,6 +112,29 @@ export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
         </div>
       </fieldset>
 
+      <fieldset>
+        <legend>Contenido en redes</legend>
+        <label className="check">
+          <input type="checkbox" name="c_active" defaultChecked={s.content.active} /> Generar la semana automáticamente cada viernes
+        </label>
+        <div className="inline-fields">
+          <label className="check"><input type="checkbox" name="c_ch_linkedin" defaultChecked={s.content.channels.includes("linkedin_personal")} /> LinkedIn</label>
+          <label className="check"><input type="checkbox" name="c_ch_instagram" defaultChecked={s.content.channels.includes("instagram")} /> Instagram</label>
+        </div>
+        <span className="small">Días de publicación</span>
+        <div className="inline-fields">
+          {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((d, i) => (
+            <label key={d} className="check"><input type="checkbox" name={`c_day_${i}`} defaultChecked={s.content.days.includes(i)} /> {d}</label>
+          ))}
+        </div>
+        <label htmlFor="c_hour">Hora de publicación (CDMX, 0 a 23)</label>
+        <input id="c_hour" name="c_hour" type="number" min={0} max={23} defaultValue={s.content.hour} />
+        <label htmlFor="c_pillars">Temas (uno por línea; rotan en orden)</label>
+        <textarea id="c_pillars" name="c_pillars" rows={5} defaultValue={s.content.pillars.join("\n")} />
+        <label htmlFor="c_langs">Idiomas (se alternan en orden: es, en)</label>
+        <input id="c_langs" name="c_langs" defaultValue={s.content.languages.join(", ")} />
+      </fieldset>
+
       <div>
         <button type="submit" disabled={pending}>{pending ? "Guardando…" : "Guardar configuración"}</button>
       </div>

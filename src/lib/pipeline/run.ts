@@ -5,6 +5,7 @@ import { getSettings, getState, setState, type GrowthSettings, type Search } fro
 import { enrichPeople, searchPeople, type EnrichedPerson } from "@/lib/apollo";
 import { evaluate, languageFor } from "@/lib/pipeline/filter";
 import { draftMessages } from "@/lib/pipeline/draft";
+import { acquireLock, releaseLock } from "@/lib/lock";
 
 // Motor diario completo:
 // 1) Busca en Apollo (gratis) con cada búsqueda configurada (stack O sector)
@@ -22,7 +23,6 @@ export type RunSummary = {
   errores: string[];
 };
 
-const LOCK_KEY = "run_lock_active";
 const LOCK_MINUTES = 15;
 const MAX_PAGES_PER_SEARCH = 5;
 
@@ -193,25 +193,6 @@ async function draftPending(s: GrowthSettings, summary: RunSummary) {
   await Promise.all([worker(), worker(), worker()]); // 3 en paralelo
 }
 
-// Candado atómico: una fila con clave única. Solo una corrida puede insertarla;
-// la segunda recibe "duplicate key" (23505) y se detiene.
-// Un candado de más de 15 minutos se considera abandonado y se borra.
-async function acquireLock(now: string): Promise<boolean> {
-  const db = createAdminClient();
-  const expired = new Date(Date.now() - LOCK_MINUTES * 60_000).toISOString();
-  const stale = await db.from("settings").delete().eq("key", LOCK_KEY).lt("updated_at", expired);
-  if (stale.error) throw new Error(`Candado: ${stale.error.message}`);
-  const { error } = await db.from("settings").insert({ key: LOCK_KEY, value: { at: now } });
-  if (!error) return true;
-  if (error.code === "23505") return false;
-  throw new Error(`Candado: ${error.message}`);
-}
-
-async function releaseLock() {
-  const db = createAdminClient();
-  await db.from("settings").delete().eq("key", LOCK_KEY);
-}
-
 export async function runPipeline(trigger: "cron" | "manual"): Promise<RunSummary> {
   const summary: RunSummary = { status: "ok", searches: [], enriquecidos: 0, descartados: 0, redactados: 0, errores: [] };
   const db = createAdminClient();
@@ -221,7 +202,7 @@ export async function runPipeline(trigger: "cron" | "manual"): Promise<RunSummar
   if (!settings.active && trigger === "cron") {
     return { ...summary, status: "skipped", reason: "El motor está apagado en Configuración." };
   }
-  if (!(await acquireLock(started))) {
+  if (!(await acquireLock("motor", LOCK_MINUTES))) {
     return { ...summary, status: "skipped", reason: "Ya hay una ejecución en curso." };
   }
 
@@ -236,7 +217,7 @@ export async function runPipeline(trigger: "cron" | "manual"): Promise<RunSummar
     summary.status = "error";
     summary.errores.push((e as Error).message);
   } finally {
-    await releaseLock();
+    await releaseLock("motor");
     await db.from("agent_runs").insert({
       agent: "motor",
       model: null,

@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 // Rutas que no requieren sesión. /api/cron se protege con CRON_SECRET dentro de la ruta.
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/api/health", "/api/cron"];
+// /api/img es pública porque Instagram descarga la imagen del post desde ahí.
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/api/health", "/api/cron", "/api/img"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));

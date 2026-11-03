@@ -23,6 +23,30 @@ export type GrowthSettings = {
   tacitContext: string;         // qué es Tacit, para el redactor
   writingRules: string;         // reglas de estilo del redactor
   followUpDays: { mensaje: number; seguimiento_1: number; seguimiento_2: number };
+  content: ContentSettings;
+};
+
+export type ContentSettings = {
+  active: boolean;        // genera la semana automáticamente los viernes
+  channels: ("instagram" | "linkedin_personal")[];
+  days: number[];         // días de publicación (0=domingo … 6=sábado), hora CDMX
+  hour: number;           // hora de publicación en CDMX
+  pillars: string[];      // temas que rotan
+  languages: ("es" | "en")[]; // se alternan en orden
+};
+
+export const DEFAULT_CONTENT: ContentSettings = {
+  active: true,
+  channels: ["linkedin_personal", "instagram"],
+  days: [1, 3, 5],
+  hour: 9,
+  pillars: [
+    "Conocimiento tácito: lo que la gente sabe y no está escrito, y qué se pierde cuando alguien se va",
+    "Adopción de IA real: por qué fallan las implementaciones de agentes y cómo hacerlo bien",
+    "Operación y eficiencia: cuellos de botella, decisiones y cómo opera de verdad una empresa",
+    "Detrás de Tacit: lo que estamos construyendo y aprendizajes como fundador",
+  ],
+  languages: ["es", "en"],
 };
 
 export const DEFAULT_SETTINGS: GrowthSettings = {
@@ -66,6 +90,7 @@ export const DEFAULT_SETTINGS: GrowthSettings = {
     "Primero deja claro qué es Tacit en una frase. Sin exageraciones, sin promesas de cifras. " +
     "Sin guiones largos (—). Sin emojis. Una sola pregunta o llamada a la acción al final, ligera.",
   followUpDays: { mensaje: 3, seguimiento_1: 7, seguimiento_2: 7 },
+  content: DEFAULT_CONTENT,
 };
 
 const KEY = "growth";
@@ -81,6 +106,7 @@ export async function getSettings(): Promise<GrowthSettings> {
     ...DEFAULT_SETTINGS,
     ...saved,
     followUpDays: { ...DEFAULT_SETTINGS.followUpDays, ...(saved.followUpDays ?? {}) },
+    content: { ...DEFAULT_CONTENT, ...(saved.content ?? {}) },
   };
 }
 

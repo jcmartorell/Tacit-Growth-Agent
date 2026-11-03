@@ -120,3 +120,8 @@ legend { font-weight: 600; padding: 0 6px; }
 .inline-fields label { display: flex; flex-direction: column; gap: 4px; }
 .inline-fields input { width: 110px; }
 details summary { cursor: pointer; }
+
+/* Fase 3-4: contenido */
+.post-grid { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.post-img { width: 240px; max-width: 100%; aspect-ratio: 4 / 5; border-radius: 8px; border: 1px solid var(--line); object-fit: cover; }
+input[type="datetime-local"] { padding: 6px 8px; }

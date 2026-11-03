@@ -131,7 +131,25 @@ export async function saveConfig(_prev: SaveState, form: FormData): Promise<Save
     },
   };
 
+  const days = [0, 1, 2, 3, 4, 5, 6].filter((i) => form.get(`c_day_${i}`) === "on");
+  const channels = [
+    ...(form.get("c_ch_linkedin") === "on" ? (["linkedin_personal"] as const) : []),
+    ...(form.get("c_ch_instagram") === "on" ? (["instagram"] as const) : []),
+  ];
+  const languages = parseList(text("c_langs"))
+    .map((l) => l.toLowerCase())
+    .filter((l): l is "es" | "en" => l === "es" || l === "en");
+  next.content = {
+    active: form.get("c_active") === "on",
+    channels: [...channels],
+    days,
+    hour: num("c_hour", current.content.hour, 0, 23),
+    pillars: text("c_pillars").split("\n").map((l) => l.trim()).filter(Boolean),
+    languages: languages.length ? languages : ["es"],
+  };
+
   if (next.titles.length === 0) return { ok: false, message: "Agrega al menos un puesto." };
+  if (next.content.pillars.length === 0) return { ok: false, message: "Agrega al menos un tema de contenido." };
   await saveSettings(next);
   refresh();
   return { ok: true, message: "Configuración guardada." };
