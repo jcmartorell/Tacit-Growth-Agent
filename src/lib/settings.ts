@@ -18,6 +18,8 @@ export type GrowthSettings = {
   seniorities: string[];        // niveles Apollo
   locations: string[];          // países de la persona
   minEmployees: number;         // 0 = sin mínimo
+  maxEmployees: number;         // 0 = sin máximo
+  companyLocations: string[];   // país de la sede de la empresa (vacío = cualquiera)
   excludeTitleWords: string[];  // descarta si el puesto contiene alguna
   searches: Search[];           // se combinan con O: stack O sector
   tacitContext: string;         // qué es Tacit, para el redactor
@@ -60,6 +62,8 @@ export const DEFAULT_SETTINGS: GrowthSettings = {
   seniorities: ["c_suite", "vp", "head", "director"],
   locations: ["mexico", "united states"],
   minEmployees: 50,
+  maxEmployees: 0,
+  companyLocations: [],
   excludeTitleWords: ["intern", "becario", "assistant", "asistente", "student", "estudiante"],
   searches: [
     {

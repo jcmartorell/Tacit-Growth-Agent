@@ -77,8 +77,12 @@ export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
         <input id="seniorities" name="seniorities" defaultValue={join(s.seniorities)} />
         <label htmlFor="locations">Países de la persona (en inglés: mexico, united states…)</label>
         <input id="locations" name="locations" defaultValue={join(s.locations)} />
+        <label htmlFor="companyLocations">País de la sede de la empresa (en inglés; vacío = cualquiera)</label>
+        <input id="companyLocations" name="companyLocations" defaultValue={join(s.companyLocations)} />
         <label htmlFor="minEmployees">Mínimo de empleados de la empresa (0 = sin mínimo)</label>
         <input id="minEmployees" name="minEmployees" type="number" min={0} defaultValue={s.minEmployees} />
+        <label htmlFor="maxEmployees">Máximo de empleados de la empresa (0 = sin máximo)</label>
+        <input id="maxEmployees" name="maxEmployees" type="number" min={0} defaultValue={s.maxEmployees} />
         <label htmlFor="excludeTitleWords">Descartar si el puesto contiene</label>
         <input id="excludeTitleWords" name="excludeTitleWords" defaultValue={join(s.excludeTitleWords)} />
       </fieldset>

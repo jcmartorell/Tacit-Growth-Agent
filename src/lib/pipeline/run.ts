@@ -31,6 +31,7 @@ type StoredProfile = Omit<EnrichedPerson, "raw">;
 function filtersHash(s: GrowthSettings, search: Search) {
   const relevant = {
     titles: s.titles, seniorities: s.seniorities, locations: s.locations, minEmployees: s.minEmployees,
+    maxEmployees: s.maxEmployees, companyLocations: s.companyLocations,
     technologies: search.technologies, industries: search.industries,
   };
   return createHash("sha256").update(JSON.stringify(relevant)).digest("hex").slice(0, 16);
@@ -57,6 +58,7 @@ async function collect(s: GrowthSettings, search: Search, want: number, taken: S
     const { hits, total: t } = await searchPeople(
       {
         titles: s.titles, seniorities: s.seniorities, locations: s.locations, minEmployees: s.minEmployees,
+        maxEmployees: s.maxEmployees, companyLocations: s.companyLocations,
         technologies: search.technologies, industries: search.industries,
       },
       page,
@@ -112,7 +114,7 @@ async function sourceProspects(s: GrowthSettings, summary: RunSummary) {
 
   const db = createAdminClient();
   for (const p of enriched) {
-    const verdict = evaluate(p, { minEmployees: s.minEmployees, excludeTitleWords: s.excludeTitleWords, locations: s.locations });
+    const verdict = evaluate(p, { minEmployees: s.minEmployees, maxEmployees: s.maxEmployees, excludeTitleWords: s.excludeTitleWords, locations: s.locations });
     const { raw, ...profile } = p;
     void raw;
     const row = {

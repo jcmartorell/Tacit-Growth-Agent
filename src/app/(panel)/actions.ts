@@ -107,6 +107,8 @@ export async function saveConfig(_prev: SaveState, form: FormData): Promise<Save
     seniorities: parseList(text("seniorities")),
     locations: parseList(text("locations")).map((l) => l.toLowerCase()),
     minEmployees: num("minEmployees", current.minEmployees, 0, 100000),
+    maxEmployees: num("maxEmployees", current.maxEmployees, 0, 1000000),
+    companyLocations: parseList(text("companyLocations")).map((l) => l.toLowerCase()),
     excludeTitleWords: parseList(text("excludeTitleWords")),
     searches: [
       {
@@ -149,6 +151,9 @@ export async function saveConfig(_prev: SaveState, form: FormData): Promise<Save
   };
 
   if (next.titles.length === 0) return { ok: false, message: "Agrega al menos un puesto." };
+  if (next.maxEmployees > 0 && next.maxEmployees < next.minEmployees) {
+    return { ok: false, message: "El máximo de empleados debe ser mayor que el mínimo." };
+  }
   if (next.content.pillars.length === 0) return { ok: false, message: "Agrega al menos un tema de contenido." };
   await saveSettings(next);
   refresh();

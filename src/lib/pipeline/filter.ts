@@ -5,6 +5,7 @@ import type { EnrichedPerson } from "@/lib/apollo";
 
 export type FilterConfig = {
   minEmployees: number;
+  maxEmployees: number;
   excludeTitleWords: string[];
   locations: string[];
 };
@@ -38,6 +39,9 @@ export function evaluate(p: EnrichedPerson, cfg: FilterConfig): { ok: true } | {
 
   if (cfg.minEmployees > 0 && p.companySize !== null && p.companySize < cfg.minEmployees) {
     return { ok: false, reason: `Empresa chica (${p.companySize} empleados)` };
+  }
+  if (cfg.maxEmployees > 0 && p.companySize !== null && p.companySize > cfg.maxEmployees) {
+    return { ok: false, reason: `Empresa demasiado grande (${p.companySize} empleados)` };
   }
 
   if (!countryMatches(p.country, cfg.locations)) {

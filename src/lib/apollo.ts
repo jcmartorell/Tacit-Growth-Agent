@@ -43,6 +43,8 @@ export type SearchFilters = {
   seniorities: string[];
   locations: string[];
   minEmployees: number;
+  maxEmployees: number;
+  companyLocations: string[];
   technologies: string[];
   industries: string[];
 };
@@ -50,12 +52,16 @@ export type SearchFilters = {
 export type SearchHit = { id: string; firstName: string; title: string | null; company: string | null };
 
 // Rangos de empleados que Apollo entiende ("min,max")
-function employeeRanges(min: number): string[] {
+export function employeeRanges(min: number, max: number): string[] {
   const all: [number, number][] = [
     [1, 10], [11, 50], [51, 200], [201, 500], [501, 1000], [1001, 5000], [5001, 10000], [10001, 1000000],
   ];
-  if (!min || min <= 1) return [];
-  return all.filter(([, hi]) => hi > min).map(([lo, hi]) => `${Math.max(lo, min)},${hi}`);
+  const lo0 = min > 1 ? min : 1;
+  const hi0 = max > 0 ? max : 1000000;
+  if (lo0 <= 1 && hi0 >= 1000000) return []; // sin filtro
+  return all
+    .filter(([lo, hi]) => hi >= lo0 && lo <= hi0)
+    .map(([lo, hi]) => `${Math.max(lo, lo0)},${Math.min(hi, hi0)}`);
 }
 
 export async function searchPeople(f: SearchFilters, page: number, perPage = 25) {
@@ -64,7 +70,8 @@ export async function searchPeople(f: SearchFilters, page: number, perPage = 25)
   q.set("include_similar_titles", "true");
   f.seniorities.forEach((s) => q.append("person_seniorities[]", s));
   f.locations.forEach((l) => q.append("person_locations[]", l));
-  employeeRanges(f.minEmployees).forEach((r) => q.append("organization_num_employees_ranges[]", r));
+  f.companyLocations.forEach((l) => q.append("organization_locations[]", l));
+  employeeRanges(f.minEmployees, f.maxEmployees).forEach((r) => q.append("organization_num_employees_ranges[]", r));
   f.technologies.forEach((t) => q.append("currently_using_any_of_technology_uids[]", t));
   f.industries.forEach((i) => q.append("organization_industries[]", i));
   q.set("page", String(page));
