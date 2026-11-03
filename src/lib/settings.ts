@@ -26,6 +26,36 @@ export type GrowthSettings = {
   writingRules: string;         // reglas de estilo del redactor
   followUpDays: { mensaje: number; seguimiento_1: number; seguimiento_2: number };
   content: ContentSettings;
+  email: EmailSettings;
+  learning: { active: boolean; minExploreShare: number };
+};
+
+export type EmailSettings = {
+  active: boolean;           // envío automático encendido
+  requireApproval: boolean;  // el primer correo de cada prospecto espera tu aprobación
+  fromName: string;
+  startDailyCap: number;     // correos nuevos por día la primera semana (calentamiento del dominio)
+  weeklyIncrease: number;    // cuántos más por día cada semana
+  maxDailyCap: number;       // tope de correos nuevos por día
+  rampStart: string | null;  // fecha en que se encendió por primera vez
+  sendFrom: number;          // hora CDMX inicio de envío
+  sendTo: number;            // hora CDMX fin de envío
+  followUpDays: [number, number]; // días entre correo 1→2 y 2→3
+  footer: string;            // pie: salida fácil y dirección (obligatoria para EE.UU.)
+};
+
+export const DEFAULT_EMAIL: EmailSettings = {
+  active: false,
+  requireApproval: true,
+  fromName: "Juan Carlos Martorell",
+  startDailyCap: 5,
+  weeklyIncrease: 5,
+  maxDailyCap: 30,
+  rampStart: null,
+  sendFrom: 9,
+  sendTo: 17,
+  followUpDays: [3, 7],
+  footer: "Si no es tema para ti, responde \"no\" y no te vuelvo a escribir.",
 };
 
 export type ContentSettings = {
@@ -95,6 +125,8 @@ export const DEFAULT_SETTINGS: GrowthSettings = {
     "Sin guiones largos (—). Sin emojis. Una sola pregunta o llamada a la acción al final, ligera.",
   followUpDays: { mensaje: 3, seguimiento_1: 7, seguimiento_2: 7 },
   content: DEFAULT_CONTENT,
+  email: DEFAULT_EMAIL,
+  learning: { active: true, minExploreShare: 0.2 },
 };
 
 const KEY = "growth";
@@ -111,6 +143,8 @@ export async function getSettings(): Promise<GrowthSettings> {
     ...saved,
     followUpDays: { ...DEFAULT_SETTINGS.followUpDays, ...(saved.followUpDays ?? {}) },
     content: { ...DEFAULT_CONTENT, ...(saved.content ?? {}) },
+    email: { ...DEFAULT_EMAIL, ...(saved.email ?? {}) },
+    learning: { ...DEFAULT_SETTINGS.learning, ...(saved.learning ?? {}) },
   };
 }
 

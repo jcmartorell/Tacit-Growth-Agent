@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { runNow, saveConfig, type SaveState } from "../actions";
+import { runNow, saveConfig, sendEmailNow, type SaveState } from "../actions";
 import type { GrowthSettings } from "@/lib/settings";
 import type { RunSummary } from "@/lib/pipeline/run";
 
@@ -54,6 +54,41 @@ export function RunNowButton({ disabled }: { disabled: boolean }) {
 }
 
 const join = (a: string[]) => a.join(", ");
+
+export function SendEmailButton({ disabled }: { disabled: boolean }) {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  return (
+    <div className="stack" style={{ maxWidth: 640 }}>
+      <div>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={disabled || pending}
+          onClick={() =>
+            start(async () => {
+              setMsg(null);
+              try {
+                const r = await sendEmailNow();
+                setMsg({
+                  ok: r.errores.length === 0 && r.status !== "error",
+                  text: r.status === "skipped"
+                    ? `No corrió: ${r.reason}`
+                    : `Revisados ${r.revisados} · Respuestas ${r.respuestas} · Rebotes ${r.rebotes} · Enviados ${r.enviados} · Seguimientos ${r.seguimientos} · Hoy ${r.enviadosHoy}/${r.limiteHoy}${r.errores.length ? ` · Errores: ${r.errores.join(" · ")}` : ""}`,
+                });
+              } catch (e) {
+                setMsg({ ok: false, text: e instanceof Error ? e.message : "Error" });
+              }
+            })
+          }
+        >
+          {pending ? "Enviando…" : "Revisar y enviar correos ahora"}
+        </button>
+      </div>
+      {msg && <p className={msg.ok ? "alert alert-ok" : "alert alert-error"}>{msg.text}</p>}
+    </div>
+  );
+}
 
 export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
   const [state, action, pending] = useActionState<SaveState, FormData>(saveConfig, null);
@@ -114,6 +149,44 @@ export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
           <label>Seguimiento 1 <input name="fu_s1" type="number" min={1} defaultValue={s.followUpDays.seguimiento_1} /></label>
           <label>Seguimiento 2 <input name="fu_s2" type="number" min={1} defaultValue={s.followUpDays.seguimiento_2} /></label>
         </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Envío automático por correo</legend>
+        <label className="check">
+          <input type="checkbox" name="e_active" defaultChecked={s.email.active} /> Envío por correo encendido
+        </label>
+        <label className="check">
+          <input type="checkbox" name="e_approval" defaultChecked={s.email.requireApproval} /> El primer correo de cada prospecto espera mi aprobación (en Hoy)
+        </label>
+        <label htmlFor="e_fromName">Nombre del remitente</label>
+        <input id="e_fromName" name="e_fromName" defaultValue={s.email.fromName} />
+        <span className="small">Calentamiento del dominio: correos nuevos por día</span>
+        <div className="inline-fields">
+          <label>Primera semana <input name="e_start" type="number" min={1} defaultValue={s.email.startDailyCap} /></label>
+          <label>Aumento por semana <input name="e_increase" type="number" min={0} defaultValue={s.email.weeklyIncrease} /></label>
+          <label>Máximo por día <input name="e_max" type="number" min={1} defaultValue={s.email.maxDailyCap} /></label>
+        </div>
+        <span className="small">Horario de envío (CDMX, lunes a viernes)</span>
+        <div className="inline-fields">
+          <label>Desde <input name="e_from" type="number" min={0} max={23} defaultValue={s.email.sendFrom} /></label>
+          <label>Hasta <input name="e_to" type="number" min={1} max={24} defaultValue={s.email.sendTo} /></label>
+        </div>
+        <span className="small">Días entre correos del mismo hilo</span>
+        <div className="inline-fields">
+          <label>Correo 1 → 2 <input name="e_fu1" type="number" min={1} defaultValue={s.email.followUpDays[0]} /></label>
+          <label>Correo 2 → 3 <input name="e_fu2" type="number" min={1} defaultValue={s.email.followUpDays[1]} /></label>
+        </div>
+        <label htmlFor="e_footer">Pie del correo (para EE.UU. la ley pide incluir una dirección postal)</label>
+        <textarea id="e_footer" name="e_footer" rows={3} defaultValue={s.email.footer} />
+      </fieldset>
+
+      <fieldset>
+        <legend>Aprendizaje</legend>
+        <label className="check">
+          <input type="checkbox" name="l_active" defaultChecked={s.learning.active} /> Ajustar solo a quién buscar y cómo escribir según las respuestas
+        </label>
+        <span className="small muted">Reparte los prospectos del día hacia la búsqueda que más respuestas consigue (desde 20 contactados) y le da al redactor los correos que sí obtuvieron respuesta.</span>
       </fieldset>
 
       <fieldset>

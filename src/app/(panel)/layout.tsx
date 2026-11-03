@@ -21,7 +21,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
           <Link href="/contenido">Contenido</Link>
           <Link href="/costos">Costos de agentes</Link>
           <Link href="/configuracion">Configuración</Link>
-          <span className="soon">Métricas · Fase 5</span>
+          <Link href="/metricas">Métricas</Link>
         </nav>
         <div className="sidebar-foot">
           <span>{user.email}</span>

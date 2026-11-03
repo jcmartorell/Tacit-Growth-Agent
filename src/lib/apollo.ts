@@ -97,6 +97,8 @@ export type EnrichedPerson = {
   title: string | null;
   headline: string | null;
   linkedinUrl: string | null;
+  email: string | null;
+  emailStatus: string | null; // Apollo: verified, guessed, unavailable…
   country: string | null;
   city: string | null;
   companyName: string | null;
@@ -130,6 +132,8 @@ function toEnriched(m: Record<string, unknown>): EnrichedPerson | null {
     title: str(m.title),
     headline: str(m.headline),
     linkedinUrl: str(m.linkedin_url),
+    email: str(m.email)?.toLowerCase() ?? null,
+    emailStatus: str(m.email_status),
     country: str(m.country) ?? str(org.country),
     city: str(m.city),
     companyName: str(org.name),

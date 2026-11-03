@@ -6,6 +6,8 @@ import { enrichPeople, searchPeople, type EnrichedPerson } from "@/lib/apollo";
 import { evaluate, languageFor } from "@/lib/pipeline/filter";
 import { draftMessages } from "@/lib/pipeline/draft";
 import { acquireLock, releaseLock } from "@/lib/lock";
+import { searchShares, winningEmails } from "@/lib/learning";
+import { emailSchemaReady } from "@/lib/schema";
 
 // Motor diario completo:
 // 1) Busca en Apollo (gratis) con cada búsqueda configurada (stack O sector)
@@ -21,6 +23,7 @@ export type RunSummary = {
   descartados: number;
   redactados: number;
   errores: string[];
+  reparto?: Record<string, number>;
 };
 
 const LOCK_MINUTES = 15;
@@ -96,11 +99,14 @@ async function sourceProspects(s: GrowthSettings, summary: RunSummary) {
   }
   const taken = new Set<string>();
   const candidates: { id: string; source: string }[] = [];
-  const perSearch = Math.ceil(s.dailyLimit / searches.length);
+  // Reparto del límite diario según qué búsqueda consigue más respuestas (aprendizaje)
+  const shares = await searchShares(s, searches.map((x) => x.key));
+  summary.reparto = shares;
 
   for (const search of searches) {
+    const want = Math.max(1, Math.round(s.dailyLimit * (shares[search.key] ?? 1 / searches.length)));
     try {
-      candidates.push(...(await collect(s, search, perSearch, taken, summary)));
+      candidates.push(...(await collect(s, search, want, taken, summary)));
     } catch (e) {
       summary.errores.push(`Búsqueda "${search.label}": ${(e as Error).message}`);
     }
@@ -113,6 +119,7 @@ async function sourceProspects(s: GrowthSettings, summary: RunSummary) {
   const sourceOf = new Map(selected.map((c) => [c.id, c.source]));
 
   const db = createAdminClient();
+  const schemaV2 = await emailSchemaReady();
   for (const p of enriched) {
     const verdict = evaluate(p, { minEmployees: s.minEmployees, maxEmployees: s.maxEmployees, excludeTitleWords: s.excludeTitleWords, locations: s.locations });
     const { raw, ...profile } = p;
@@ -127,6 +134,8 @@ async function sourceProspects(s: GrowthSettings, summary: RunSummary) {
       industry: p.industry,
       country: p.country,
       linkedin_url: p.linkedinUrl,
+      email: p.email,
+      ...(schemaV2 ? { email_status: p.emailStatus } : {}),
       status: verdict.ok ? "nuevo" : "descartado",
       discard_reason: verdict.ok ? null : verdict.reason,
       research: { source: sourceOf.get(p.id) ?? null, profile },
@@ -152,6 +161,11 @@ async function draftPending(s: GrowthSettings, summary: RunSummary) {
   }
 
   const queue = [...(data ?? [])];
+  const schemaV2 = await emailSchemaReady();
+  // Ejemplos de primeros correos que obtuvieron respuesta, por idioma
+  const winners: Record<"es" | "en", string[]> = s.learning.active
+    ? { es: await winningEmails("es"), en: await winningEmails("en") }
+    : { es: [], en: [] };
   const worker = async () => {
     while (queue.length > 0) {
       const row = queue.shift()!;
@@ -163,15 +177,28 @@ async function draftPending(s: GrowthSettings, summary: RunSummary) {
       }
       const lang = languageFor(profile.country);
       try {
-        const d = await draftMessages({ ...profile, raw: {} }, lang, s);
+        const d = await draftMessages({ ...profile, raw: {} }, lang, s, winners[lang]);
         const now = new Date().toISOString();
+        // Solo correos verificados por Apollo: proteger la reputación del dominio
+        const canEmail = schemaV2 && Boolean(profile.email && profile.emailStatus === "verified")
+          && Boolean(d.asunto && d.correo_1 && d.correo_2 && d.correo_3);
+        const emailMsgs = canEmail
+          ? [
+              { prospect_id: row.id, kind: "correo_1", subject: d.asunto, body: d.correo_1, status: "borrador", due_at: now },
+              { prospect_id: row.id, kind: "correo_2", subject: d.asunto, body: d.correo_2, status: "borrador", due_at: null },
+              { prospect_id: row.id, kind: "correo_3", subject: d.asunto, body: d.correo_3, status: "borrador", due_at: null },
+            ]
+          : [];
         const msgs = [
-          { prospect_id: row.id, kind: "invitacion", body: d.invitacion, status: "borrador", due_at: now },
-          { prospect_id: row.id, kind: "mensaje", body: d.mensaje, status: "borrador", due_at: null },
-          { prospect_id: row.id, kind: "seguimiento_1", body: d.seguimiento_1, status: "borrador", due_at: null },
-          { prospect_id: row.id, kind: "seguimiento_2", body: d.seguimiento_2, status: "borrador", due_at: null },
+          ...emailMsgs,
+          { prospect_id: row.id, kind: "invitacion", subject: null, body: d.invitacion, status: "borrador", due_at: now },
+          { prospect_id: row.id, kind: "mensaje", subject: null, body: d.mensaje, status: "borrador", due_at: null },
+          { prospect_id: row.id, kind: "seguimiento_1", subject: null, body: d.seguimiento_1, status: "borrador", due_at: null },
+          { prospect_id: row.id, kind: "seguimiento_2", subject: null, body: d.seguimiento_2, status: "borrador", due_at: null },
         ];
-        const ins = await db.from("outreach_messages").upsert(msgs, { onConflict: "prospect_id,kind" });
+        // Antes de la migración 002 la columna subject no existe
+        const rows = schemaV2 ? msgs : msgs.map(({ subject, ...rest }) => { void subject; return rest; });
+        const ins = await db.from("outreach_messages").upsert(rows, { onConflict: "prospect_id,kind" });
         if (ins.error) throw new Error(ins.error.message);
         const upd = await db
           .from("prospects")

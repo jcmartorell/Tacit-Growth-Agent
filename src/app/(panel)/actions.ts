@@ -5,6 +5,9 @@ import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSettings, parseList, saveSettings, type GrowthSettings } from "@/lib/settings";
 import { runPipeline, type RunSummary } from "@/lib/pipeline/run";
+import { runEmail, type EmailSummary } from "@/lib/email/sender";
+import { disconnectGmail } from "@/lib/email/gmail";
+import { emailSchemaReady } from "@/lib/schema";
 
 // Todas las acciones verifican la sesión primero: una server action es un endpoint público.
 
@@ -54,9 +57,14 @@ export async function markSent(messageId: string) {
 async function closeSequence(prospectId: string, status: "respondio" | "reunion" | "descartado", reason?: string) {
   await requireUser();
   const db = createAdminClient();
+  const replied = (status === "respondio" || status === "reunion") && (await emailSchemaReady());
   const r1 = await db
     .from("prospects")
-    .update({ status, ...(reason ? { discard_reason: reason } : {}) })
+    .update({
+      status,
+      ...(reason ? { discard_reason: reason } : {}),
+      ...(replied ? { replied_at: new Date().toISOString() } : {}),
+    })
     .eq("id", prospectId);
   if (r1.error) throw new Error(r1.error.message);
   // Los mensajes que no se mandaron ya no aplican
@@ -64,7 +72,7 @@ async function closeSequence(prospectId: string, status: "respondio" | "reunion"
     .from("outreach_messages")
     .update({ status: "descartado" })
     .eq("prospect_id", prospectId)
-    .eq("status", "borrador");
+    .in("status", ["borrador", "aprobado"]);
   if (r2.error) throw new Error(r2.error.message);
   refresh();
 }
@@ -86,6 +94,41 @@ export async function runNow(): Promise<RunSummary> {
   const summary = await runPipeline("manual");
   refresh();
   return summary;
+}
+
+export async function sendEmailNow(): Promise<EmailSummary> {
+  await requireUser();
+  const r = await runEmail("manual");
+  refresh();
+  return r;
+}
+
+export async function disconnectGmailAction() {
+  await requireUser();
+  await disconnectGmail();
+  refresh();
+}
+
+// Aprobar (o guardar) el primer correo de un prospecto, con asunto y texto editados
+export async function approveEmail(messageId: string, subject: string, body: string, approve: boolean) {
+  await requireUser();
+  const sub = subject.replace(/[\r\n]+/g, " ").trim();
+  const text = body.trim();
+  if (!sub || !text) throw new Error("Asunto y texto son obligatorios.");
+  if (sub.length > 120) throw new Error("El asunto es demasiado largo.");
+  const db = createAdminClient();
+  const { data: m, error } = await db.from("outreach_messages").select("prospect_id, kind, status").eq("id", messageId).single();
+  if (error || !m) throw new Error("Correo no encontrado.");
+  if (m.kind !== "correo_1" || m.status === "enviado") throw new Error("Este correo ya no se puede editar.");
+  const r1 = await db.from("outreach_messages")
+    .update({ subject: sub, body: text, ...(approve ? { status: "aprobado" } : {}) })
+    .eq("id", messageId);
+  if (r1.error) throw new Error(r1.error.message);
+  // El asunto es el mismo para todo el hilo
+  const r2 = await db.from("outreach_messages").update({ subject: sub })
+    .eq("prospect_id", m.prospect_id).in("kind", ["correo_2", "correo_3"]);
+  if (r2.error) throw new Error(r2.error.message);
+  refresh();
 }
 
 export type SaveState = { ok: boolean; message: string } | null;
@@ -149,6 +192,24 @@ export async function saveConfig(_prev: SaveState, form: FormData): Promise<Save
     pillars: text("c_pillars").split("\n").map((l) => l.trim()).filter(Boolean),
     languages: languages.length ? languages : ["es"],
   };
+
+  const eActive = form.get("e_active") === "on";
+  next.email = {
+    active: eActive,
+    requireApproval: form.get("e_approval") === "on",
+    fromName: text("e_fromName").replace(/[\r\n]+/g, " ").trim() || current.email.fromName,
+    startDailyCap: num("e_start", current.email.startDailyCap, 1, 100),
+    weeklyIncrease: num("e_increase", current.email.weeklyIncrease, 0, 50),
+    maxDailyCap: num("e_max", current.email.maxDailyCap, 1, 200),
+    // La rampa empieza la primera vez que se enciende el envío
+    rampStart: current.email.rampStart ?? (eActive ? new Date().toISOString() : null),
+    sendFrom: num("e_from", current.email.sendFrom, 0, 23),
+    sendTo: num("e_to", current.email.sendTo, 1, 24),
+    followUpDays: [num("e_fu1", current.email.followUpDays[0], 1, 60), num("e_fu2", current.email.followUpDays[1], 1, 60)],
+    footer: text("e_footer").trim() || current.email.footer,
+  };
+  next.learning = { ...current.learning, active: form.get("l_active") === "on" };
+  if (next.email.sendTo <= next.email.sendFrom) return { ok: false, message: "La hora final de envío debe ser mayor que la inicial." };
 
   if (next.titles.length === 0) return { ok: false, message: "Agrega al menos un puesto." };
   if (next.maxEmployees > 0 && next.maxEmployees < next.minEmployees) {

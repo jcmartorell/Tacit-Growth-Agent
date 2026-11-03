@@ -125,3 +125,8 @@ details summary { cursor: pointer; }
 .post-grid { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .post-img { width: 240px; max-width: 100%; aspect-ratio: 4 / 5; border-radius: 8px; border: 1px solid var(--line); object-fit: cover; }
 input[type="datetime-local"] { padding: 6px 8px; }
+
+/* Evita que tablas y textos largos ensanchen la página en celular */
+.content { min-width: 0; }
+.card, .alert, .message { min-width: 0; overflow-wrap: anywhere; }
+.config-form input, .config-form textarea { max-width: 100%; }

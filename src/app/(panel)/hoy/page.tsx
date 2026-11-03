@@ -1,12 +1,16 @@
 import Link from "next/link";
-import { getQueue, KIND_LABEL } from "@/lib/queue";
+import { getEmailApprovals, getQueue, KIND_LABEL, type EmailApproval } from "@/lib/queue";
+import { getSettings } from "@/lib/settings";
+import { emailSchemaReady } from "@/lib/schema";
+import { EmailApprovalCard } from "./email-approval";
 import { CopyButton, ActionButton } from "../ui";
 import { discardProspect, markMeeting, markReplied, markSent } from "../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function HoyPage() {
-  const items = await getQueue();
+  const [items, settings, schemaV2] = await Promise.all([getQueue(), getSettings(), emailSchemaReady()]);
+  const approvals: EmailApproval[] = schemaV2 && settings.email.requireApproval ? await getEmailApprovals() : [];
 
   return (
     <>
@@ -15,6 +19,28 @@ export default async function HoyPage() {
         Mensajes que toca enviar. Abre el perfil, copia el texto, mándalo en LinkedIn y marca &quot;Enviado&quot;.
         El sistema programa solo el siguiente paso.
       </p>
+
+      {approvals.length > 0 && (
+        <>
+          <h2 style={{ marginTop: 16 }}>Correos por aprobar ({approvals.length})</h2>
+          <p className="muted">Revisa el primer correo de cada prospecto. Aprobado, se envía solo en horario hábil.</p>
+          <div className="queue">
+            {approvals.map((a) => (
+              <EmailApprovalCard
+                key={a.id}
+                id={a.id}
+                prospectId={a.prospect.id}
+                name={a.prospect.full_name}
+                meta={[a.prospect.title, a.prospect.company_name].filter(Boolean).join(" · ")}
+                email={a.prospect.email ?? ""}
+                subject={a.subject ?? ""}
+                body={a.body}
+              />
+            ))}
+          </div>
+          <h2 style={{ marginTop: 28 }}>LinkedIn</h2>
+        </>
+      )}
 
       {items.length === 0 ? (
         <div className="table-wrap"><div className="empty">No hay nada pendiente por hoy.</div></div>
