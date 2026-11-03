@@ -37,6 +37,18 @@ const SCHEMA = {
   },
 };
 
+// Revisión determinística de idioma: proporción de palabras muy comunes del español
+const ES_WORDS = new Set(["que", "de", "la", "el", "los", "las", "una", "para", "con", "por", "se", "es", "en", "del", "lo", "su", "como", "pero", "más", "y"]);
+export function spanishRatio(text: string): number {
+  const words = text.toLowerCase().match(/[a-záéíóúñü]+/g) ?? [];
+  if (words.length === 0) return 0;
+  return words.filter((w) => ES_WORDS.has(w)).length / words.length;
+}
+function languageOk(g: Gen, lang: "es" | "en"): boolean {
+  const r = spanishRatio(`${g.linkedin} ${g.instagram} ${g.imagen_titulo}`);
+  return lang === "es" ? r > 0.12 : r < 0.06;
+}
+
 const clean = (t: string) => t.replace(/\s*[—–]\s*/g, ", ").trim();
 const cut = (t: string, max: number) => (t.length <= max ? t : t.slice(0, t.lastIndexOf(" ", max)).trim());
 
@@ -79,7 +91,11 @@ export async function generateUpcoming(settings?: GrowthSettings): Promise<Gener
     const lang = c.languages[counter % Math.max(1, c.languages.length)] ?? "es";
     counter += 1;
 
+    const langRule = lang === "es"
+      ? "IDIOMA OBLIGATORIO: español de México. Todos los campos van en español."
+      : "MANDATORY LANGUAGE: US English. Every field (tema, linkedin, instagram, imagen_titulo, imagen_subtitulo) must be written in natural US English, even though these instructions are in Spanish. Do not write any Spanish.";
     const system = [
+      langRule,
       "Escribes el contenido de redes de Juan Carlos Martorell, fundador de Tacit, en primera persona.",
       `Qué es Tacit: ${s.tacitContext}`,
       `Reglas de estilo: ${s.writingRules}`,
@@ -87,20 +103,27 @@ export async function generateUpcoming(settings?: GrowthSettings): Promise<Gener
       "Nada de clichés de LinkedIn, ni listas de emojis, ni frases motivacionales vacías. Una idea clara por post.",
       "No inventes cifras, clientes ni casos. Si das un ejemplo, que sea claramente ilustrativo.",
       "Menciona a Tacit solo si viene natural; la mayoría de los posts deben aportar valor sin vender.",
-      lang === "es" ? "Escribe todo en español de México." : "Write everything in natural US English.",
+      langRule,
     ].join("\n\n");
     const prompt = [
       `Tema de esta semana: ${pillar}`,
       recentTopics.length ? `Temas ya publicados, no los repitas:\n- ${recentTopics.join("\n- ")}` : "",
       "Genera un tema concreto dentro de ese eje, el post de LinkedIn, el caption de Instagram y los textos de la imagen.",
       "La primera línea del post de LinkedIn debe enganchar por sí sola.",
+      langRule,
     ].filter(Boolean).join("\n\n");
 
     try {
-      const g = await generateJson<Gen>({
-        agent: "contenido", system, prompt, schema: SCHEMA, maxTokens: 2500,
-        detail: { pillar, lang, slot: slot.toISOString() },
-      });
+      const ask = (extra = "") =>
+        generateJson<Gen>({
+          agent: "contenido", system, prompt: prompt + extra, schema: SCHEMA, maxTokens: 2500,
+          detail: { pillar, lang, slot: slot.toISOString(), retry: Boolean(extra) },
+        });
+      let g = await ask();
+      if (!languageOk(g, lang)) {
+        g = await ask(`\n\nTu respuesta anterior estaba en el idioma equivocado. ${langRule}`);
+        if (!languageOk(g, lang)) throw new Error(`El agente no respetó el idioma (${lang}); no se guardó.`);
+      }
       const meta: PostMeta = {
         group: randomUUID(),
         lang,
