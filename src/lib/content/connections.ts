@@ -7,6 +7,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type IgConnection = {
   token: string | null;
+  // "instagram": token de Instagram (graph.instagram.com, 60 días, se renueva)
+  // "facebook": token de Meta/inicio de sesión unificado (graph.facebook.com)
+  host?: "instagram" | "facebook";
   userId: string | null;
   username: string | null;
   connectedAt: string | null;
