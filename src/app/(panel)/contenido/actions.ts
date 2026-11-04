@@ -8,6 +8,7 @@ import { generateUpcoming, type GenerateSummary } from "@/lib/content/generate";
 import { publishDue, type PublishSummary } from "@/lib/content/publish";
 import { connectInstagram } from "@/lib/content/instagram";
 import { disconnect } from "@/lib/content/connections";
+import { renderReelForPost } from "@/lib/content/render";
 
 // Cada acción verifica la sesión: una server action es un endpoint público.
 
@@ -83,7 +84,18 @@ export async function publishNow(id: string): Promise<PublishSummary> {
   const r = await publishDue();
   refresh();
   if (r.skipped) throw new Error("Hay otra publicación en curso; intenta en un minuto.");
+  if (r.errores.length) throw new Error(r.errores.join(" · "));
   return r;
+}
+
+export async function renderReelNow(id: string) {
+  await requireUser();
+  const db = createAdminClient();
+  const { data, error } = await db.from("posts").select("id, image_url, metrics, status").eq("id", id).single();
+  if (error || !data) throw new Error("Post no encontrado.");
+  if (data.status === "publicado") throw new Error("Este reel ya se publicó.");
+  await renderReelForPost(data as never);
+  refresh();
 }
 
 export type ConnState = { ok: boolean; message: string } | null;

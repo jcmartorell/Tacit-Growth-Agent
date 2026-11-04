@@ -155,3 +155,41 @@ export async function publishInstagram(imageUrl: string, caption: string): Promi
   if (!mediaId) throw new Error("Instagram no devolvió el id del post publicado.");
   return mediaId;
 }
+
+// ---------- Reels (dos fases: el video puede tardar varios minutos en procesarse) ----------
+
+export async function createReelContainer(videoUrl: string, caption: string): Promise<string> {
+  const c = await getIg();
+  if (!c.token || !c.userId) throw new Error("Instagram no está conectado.");
+  const host: Host = c.host ?? "instagram";
+  const container = await call(host, `/${VERSION}/${c.userId}/media`, c.token, {
+    method: "POST",
+    params: { media_type: "REELS", video_url: videoUrl, caption, share_to_feed: "true", thumb_offset: "2500" },
+  });
+  const id = String(container.id ?? "");
+  if (!id) throw new Error("Instagram no devolvió el contenedor del reel.");
+  return id;
+}
+
+// Revisa el contenedor; si ya terminó, lo publica. Devuelve el id publicado o null si sigue procesando.
+export async function tryPublishReel(containerId: string, waitSeconds = 45): Promise<string | null> {
+  const c = await getIg();
+  if (!c.token || !c.userId) throw new Error("Instagram no está conectado.");
+  const host: Host = c.host ?? "instagram";
+  const deadline = Date.now() + waitSeconds * 1000;
+  for (;;) {
+    const st = await call(host, `/${VERSION}/${containerId}`, c.token, { params: { fields: "status_code" } });
+    const code = String(st.status_code ?? "");
+    if (code === "FINISHED") break;
+    if (code === "ERROR" || code === "EXPIRED") throw new Error(`Instagram rechazó el video (${code}).`);
+    if (Date.now() > deadline) return null; // se reintenta en la siguiente corrida
+    await sleep(8000);
+  }
+  const pub = await call(host, `/${VERSION}/${c.userId}/media_publish`, c.token, {
+    method: "POST",
+    params: { creation_id: containerId },
+  });
+  const mediaId = String(pub.id ?? "");
+  if (!mediaId) throw new Error("Instagram no devolvió el id del reel publicado.");
+  return mediaId;
+}

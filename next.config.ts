@@ -7,8 +7,11 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     // Las claves son globs (picomatch): "*" cubre el segmento dinámico [id]
     "/api/img/*": ["./assets/fonts/**"],
+    // Reels: fuentes y el binario de ffmpeg en las rutas que generan o publican video
+    "/api/cron/*": ["./assets/fonts/**", "./node_modules/ffmpeg-static/ffmpeg"],
+    "/contenido": ["./assets/fonts/**", "./node_modules/ffmpeg-static/ffmpeg"],
   },
-  serverExternalPackages: ["sharp"],
+  serverExternalPackages: ["sharp", "ffmpeg-static"],
 };
 
 export default nextConfig;

@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateJson } from "@/lib/llm";
 import { getSettings, type GrowthSettings } from "@/lib/settings";
 import { nextSlots } from "@/lib/time";
+import { generateReels } from "@/lib/content/reel-gen";
 
 // Agente de contenido: para cada horario libre de la semana genera un tema
 // y sus versiones para LinkedIn e Instagram (texto + textos de la imagen).
@@ -14,6 +15,10 @@ export type PostMeta = {
   pillar: string;
   headline: string;   // título de la imagen
   subline: string;    // subtítulo de la imagen
+  format?: "image" | "reel";
+  reel?: { hook: string; points: string[]; cta: string; seed: number };
+  containerId?: string; // contenedor de Instagram en proceso (reels)
+  renderedAt?: string;
 };
 
 type Gen = {
@@ -44,7 +49,7 @@ export function spanishRatio(text: string): number {
   if (words.length === 0) return 0;
   return words.filter((w) => ES_WORDS.has(w)).length / words.length;
 }
-function languageOk(g: Gen, lang: "es" | "en"): boolean {
+export function languageOk(g: Gen, lang: "es" | "en"): boolean {
   const r = spanishRatio(`${g.linkedin} ${g.instagram} ${g.imagen_titulo}`);
   return lang === "es" ? r > 0.12 : r < 0.06;
 }
@@ -56,6 +61,16 @@ export type GenerateSummary = { creados: number; horarios: number; errores: stri
 
 export async function generateUpcoming(settings?: GrowthSettings): Promise<GenerateSummary> {
   const s = settings ?? (await getSettings());
+  const posts = await generatePosts(s);
+  const reels = await generateReels(s).catch((e) => ({ creados: 0, horarios: 0, errores: [`Reels: ${(e as Error).message}`] }));
+  return {
+    creados: posts.creados + reels.creados,
+    horarios: posts.horarios + reels.horarios,
+    errores: [...posts.errores, ...reels.errores],
+  };
+}
+
+async function generatePosts(s: GrowthSettings): Promise<GenerateSummary> {
   const c = s.content;
   const db = createAdminClient();
   const summary: GenerateSummary = { creados: 0, horarios: 0, errores: [] };
@@ -68,11 +83,15 @@ export async function generateUpcoming(settings?: GrowthSettings): Promise<Gener
   // Horarios que ya tienen post (cualquier estado excepto descartado) no se vuelven a llenar
   const { data: taken, error } = await db
     .from("posts")
-    .select("scheduled_at")
+    .select("scheduled_at, metrics")
     .in("scheduled_at", slots.map((d) => d.toISOString()))
     .neq("status", "descartado");
   if (error) throw new Error(`Leer posts: ${error.message}`);
-  const takenSet = new Set((taken ?? []).map((r) => new Date(r.scheduled_at as string).toISOString()));
+  const takenSet = new Set(
+    (taken ?? [])
+      .filter((r) => (r.metrics as { meta?: PostMeta } | null)?.meta?.format !== "reel")
+      .map((r) => new Date(r.scheduled_at as string).toISOString()),
+  );
 
   // Rotación: cuántos temas se han generado en total define el siguiente tema e idioma
   const { data: recent, error: e2 } = await db

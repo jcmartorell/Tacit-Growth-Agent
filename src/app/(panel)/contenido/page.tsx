@@ -17,7 +17,7 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
   const db = createAdminClient();
   const [{ data, error }, conn] = await Promise.all([
     db.from("posts")
-      .select("id, channel, topic, body, status, scheduled_at, published_at, error, metrics, updated_at")
+      .select("id, channel, topic, body, status, scheduled_at, published_at, error, metrics, updated_at, image_url")
       .neq("status", "descartado")
       .order("scheduled_at", { ascending: true })
       .limit(200),
@@ -40,6 +40,10 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
       lang: meta?.lang ?? null,
       pillar: meta?.pillar ? meta.pillar.split(":")[0] : null,
       imageUrl: r.channel === "instagram" && meta?.headline ? `/api/img/${r.id}.jpg?v=${encodeURIComponent(String(r.updated_at))}` : null,
+      format: meta?.format === "reel" ? "reel" : "image",
+      videoUrl: meta?.format === "reel" ? r.image_url : null,
+      script: meta?.reel ? [meta.reel.hook, ...meta.reel.points, meta.reel.cta] : null,
+      processing: Boolean(meta?.containerId),
     };
   });
 
@@ -50,7 +54,7 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
     <>
       <h1>Contenido</h1>
       <p className="muted">
-        Cada viernes el agente prepara los posts de lunes, miércoles y viernes. Tú los apruebas o editas, y se publican solos a su hora.
+        Cada viernes el agente prepara los posts de la semana siguiente: imágenes y un reel diario. Tú los apruebas o editas, y se publican solos a su hora.
       </p>
 
       <h2 style={{ marginTop: 20 }}>Cuentas conectadas</h2>

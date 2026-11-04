@@ -210,6 +210,17 @@ export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
         <textarea id="c_pillars" name="c_pillars" rows={5} defaultValue={s.content.pillars.join("\n")} />
         <label htmlFor="c_langs">Idiomas (se alternan en orden: es, en)</label>
         <input id="c_langs" name="c_langs" defaultValue={s.content.languages.join(", ")} />
+        <label className="check" style={{ marginTop: 8 }}>
+          <input type="checkbox" name="r_active" defaultChecked={s.content.reels.active} /> Reels de Instagram (texto animado con música)
+        </label>
+        <span className="small">Días de reel</span>
+        <div className="inline-fields">
+          {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map((d, i) => (
+            <label key={d} className="check"><input type="checkbox" name={`r_day_${i}`} defaultChecked={s.content.reels.days.includes(i)} /> {d}</label>
+          ))}
+        </div>
+        <label htmlFor="r_hour">Hora del reel (CDMX, 0 a 23)</label>
+        <input id="r_hour" name="r_hour" type="number" min={0} max={23} defaultValue={s.content.reels.hour} />
       </fieldset>
 
       <div>

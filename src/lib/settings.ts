@@ -65,6 +65,7 @@ export type ContentSettings = {
   hour: number;           // hora de publicación en CDMX
   pillars: string[];      // temas que rotan
   languages: ("es" | "en")[]; // se alternan en orden
+  reels: { active: boolean; days: number[]; hour: number }; // reels de Instagram
 };
 
 export const DEFAULT_CONTENT: ContentSettings = {
@@ -79,6 +80,7 @@ export const DEFAULT_CONTENT: ContentSettings = {
     "Detrás de Tacit: lo que estamos construyendo y aprendizajes como fundador",
   ],
   languages: ["es", "en"],
+  reels: { active: true, days: [0, 1, 2, 3, 4, 5, 6], hour: 13 },
 };
 
 export const DEFAULT_SETTINGS: GrowthSettings = {
@@ -142,7 +144,11 @@ export async function getSettings(): Promise<GrowthSettings> {
     ...DEFAULT_SETTINGS,
     ...saved,
     followUpDays: { ...DEFAULT_SETTINGS.followUpDays, ...(saved.followUpDays ?? {}) },
-    content: { ...DEFAULT_CONTENT, ...(saved.content ?? {}) },
+    content: {
+      ...DEFAULT_CONTENT,
+      ...(saved.content ?? {}),
+      reels: { ...DEFAULT_CONTENT.reels, ...(saved.content?.reels ?? {}) },
+    },
     email: { ...DEFAULT_EMAIL, ...(saved.email ?? {}) },
     learning: { ...DEFAULT_SETTINGS.learning, ...(saved.learning ?? {}) },
   };

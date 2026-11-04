@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import {
-  backToDraft, connectIg, discardPost, generateNow, publishNow, savePost, type ConnState,
+  backToDraft, connectIg, discardPost, generateNow, publishNow, renderReelNow, savePost, type ConnState,
 } from "./actions";
 
 export type PostView = {
@@ -18,6 +18,10 @@ export type PostView = {
   lang: string | null;
   pillar: string | null;
   imageUrl: string | null;
+  format: "image" | "reel";
+  videoUrl: string | null;
+  script: string[] | null;
+  processing: boolean;
 };
 
 const CHANNEL: Record<string, string> = { instagram: "Instagram", linkedin_personal: "LinkedIn" };
@@ -50,7 +54,7 @@ export function PostCard({ p }: { p: PostView }) {
     <article className="card queue-item">
       <header className="queue-head">
         <div>
-          <span className="pill">{CHANNEL[p.channel] ?? p.channel}</span>{" "}
+          <span className="pill">{p.format === "reel" ? "Instagram Reel" : CHANNEL[p.channel] ?? p.channel}</span>{" "}
           <span className="pill">{p.status}</span>{" "}
           {p.lang && <span className="pill">{p.lang.toUpperCase()}</span>}
           <div className="queue-name" style={{ marginTop: 6 }}>{p.topic}</div>
@@ -61,7 +65,23 @@ export function PostCard({ p }: { p: PostView }) {
 
       {p.error && <p className="alert alert-error">{p.error}</p>}
 
+      {p.processing && p.status === "aprobado" && (
+        <p className="alert alert-ok">Instagram está procesando el video; se publica en la siguiente revisión (máximo 1 hora).</p>
+      )}
       <div className="post-grid">
+        {p.format === "reel" && (
+          p.videoUrl ? (
+            <video src={p.videoUrl} className="post-img" style={{ aspectRatio: "9 / 16" }} controls playsInline preload="metadata" />
+          ) : (
+            <div className="post-img reel-pending stack">
+              <span className="small">Video pendiente</span>
+              {p.script && <ol className="small">{p.script.map((l, i) => <li key={i}>{l}</li>)}</ol>}
+              <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => renderReelNow(p.id), "Video generado.")}>
+                {pending ? "Generando… (~30 s)" : "Generar video ahora"}
+              </button>
+            </div>
+          )
+        )}
         {p.imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={p.imageUrl} alt="Imagen del post" className="post-img" loading="lazy" />

@@ -191,6 +191,11 @@ export async function saveConfig(_prev: SaveState, form: FormData): Promise<Save
     hour: num("c_hour", current.content.hour, 0, 23),
     pillars: text("c_pillars").split("\n").map((l) => l.trim()).filter(Boolean),
     languages: languages.length ? languages : ["es"],
+    reels: {
+      active: form.get("r_active") === "on",
+      days: [0, 1, 2, 3, 4, 5, 6].filter((i) => form.get(`r_day_${i}`) === "on"),
+      hour: num("r_hour", current.content.reels.hour, 0, 23),
+    },
   };
 
   const eActive = form.get("e_active") === "on";
