@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { runNow, saveConfig, sendEmailNow, type SaveState } from "../actions";
 import type { GrowthSettings } from "@/lib/settings";
+import { unwrap } from "@/lib/action-result";
 import type { RunSummary } from "@/lib/pipeline/run";
 
 export function RunNowButton({ disabled }: { disabled: boolean }) {
@@ -21,7 +22,7 @@ export function RunNowButton({ disabled }: { disabled: boolean }) {
               setError(null);
               setResult(null);
               try {
-                setResult(await runNow());
+                setResult(unwrap(await runNow()));
               } catch (e) {
                 setError(e instanceof Error ? e.message : "Error");
               }
@@ -69,7 +70,7 @@ export function SendEmailButton({ disabled }: { disabled: boolean }) {
             start(async () => {
               setMsg(null);
               try {
-                const r = await sendEmailNow();
+                const r = unwrap(await sendEmailNow());
                 setMsg({
                   ok: r.errores.length === 0 && r.status !== "error",
                   text: r.status === "skipped"
@@ -210,8 +211,10 @@ export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
         <textarea id="c_pillars" name="c_pillars" rows={5} defaultValue={s.content.pillars.join("\n")} />
         <label htmlFor="c_langs">Idiomas (se alternan en orden: es, en)</label>
         <input id="c_langs" name="c_langs" defaultValue={s.content.languages.join(", ")} />
+        <label htmlFor="c_guide">Cómo quiero los textos (posts y reels). Ej.: más directos, con preguntas incómodas, hablar de casos reales de operación, evitar la palabra IA.</label>
+        <textarea id="c_guide" name="c_guide" rows={4} defaultValue={s.content.guide} placeholder="Escribe aquí cómo quieres que escriba el agente" />
         <label className="check" style={{ marginTop: 8 }}>
-          <input type="checkbox" name="r_active" defaultChecked={s.content.reels.active} /> Reels de Instagram (texto animado con música)
+          <input type="checkbox" name="r_active" defaultChecked={s.content.reels.active} /> Reels de Instagram (animación de grafos y flujos 3D con música)
         </label>
         <span className="small">Días de reel</span>
         <div className="inline-fields">
@@ -221,6 +224,14 @@ export function ConfigForm({ settings: s }: { settings: GrowthSettings }) {
         </div>
         <label htmlFor="r_hour">Hora del reel (CDMX, 0 a 23)</label>
         <input id="r_hour" name="r_hour" type="number" min={0} max={23} defaultValue={s.content.reels.hour} />
+        <label htmlFor="r_music">Música de los reels (original, generada; cambiarla regenera los reels no publicados)</label>
+        <select id="r_music" name="r_music" defaultValue={s.content.reels.music}>
+          <option value="piano">Piano (suave, lento)</option>
+          <option value="corporativo">Corporativo (pulso electrónico)</option>
+          <option value="metal">Metal (acordes de potencia, doble bombo)</option>
+        </select>
+        <label htmlFor="r_guide">Solo para reels: tipo de texto. Ej.: un dato que sorprenda, un error común y cómo evitarlo, mito contra realidad.</label>
+        <textarea id="r_guide" name="r_guide" rows={3} defaultValue={s.content.reels.guide} placeholder="Opcional" />
       </fieldset>
 
       <div>

@@ -65,7 +65,8 @@ export type ContentSettings = {
   hour: number;           // hora de publicación en CDMX
   pillars: string[];      // temas que rotan
   languages: ("es" | "en")[]; // se alternan en orden
-  reels: { active: boolean; days: number[]; hour: number }; // reels de Instagram
+  guide: string;          // indicaciones libres para los textos de posts y reels
+  reels: { active: boolean; days: number[]; hour: number; guide: string; music: "piano" | "corporativo" | "metal" }; // reels de Instagram
 };
 
 export const DEFAULT_CONTENT: ContentSettings = {
@@ -80,7 +81,8 @@ export const DEFAULT_CONTENT: ContentSettings = {
     "Detrás de Tacit: lo que estamos construyendo y aprendizajes como fundador",
   ],
   languages: ["es", "en"],
-  reels: { active: true, days: [0, 1, 2, 3, 4, 5, 6], hour: 13 },
+  guide: "",
+  reels: { active: true, days: [0, 1, 2, 3, 4, 5, 6], hour: 13, guide: "", music: "piano" },
 };
 
 export const DEFAULT_SETTINGS: GrowthSettings = {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { unwrap } from "@/lib/action-result";
 
 export function CopyButton({ text, label = "Copiar" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -48,7 +49,7 @@ export function ActionButton({
           start(async () => {
             setError(null);
             try {
-              await action();
+              unwrap(await action());
             } catch (e) {
               setError(e instanceof Error ? e.message : "Error");
             }

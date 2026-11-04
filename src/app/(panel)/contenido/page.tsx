@@ -42,7 +42,7 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
       imageUrl: r.channel === "instagram" && meta?.headline ? `/api/img/${r.id}.jpg?v=${encodeURIComponent(String(r.updated_at))}` : null,
       format: meta?.format === "reel" ? "reel" : "image",
       videoUrl: meta?.format === "reel" ? r.image_url : null,
-      script: meta?.reel ? [meta.reel.hook, ...meta.reel.points, meta.reel.cta] : null,
+      reel: meta?.reel ? { hook: meta.reel.hook, points: meta.reel.points, cta: meta.reel.cta } : null,
       processing: Boolean(meta?.containerId),
     };
   });

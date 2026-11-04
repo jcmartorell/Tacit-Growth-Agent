@@ -33,7 +33,7 @@ a { color: inherit; }
 /* Formularios */
 .stack { display: flex; flex-direction: column; gap: 10px; }
 label { font-size: 13px; font-weight: 600; }
-input {
+input, select {
   font: inherit; padding: 10px 12px; border: 1px solid var(--line);
   border-radius: 8px; background: #fff; color: var(--ink);
 }
@@ -132,3 +132,6 @@ input[type="datetime-local"] { padding: 6px 8px; }
 .config-form input, .config-form textarea { max-width: 100%; }
 .reel-pending { background: var(--ink); color: #fff; padding: 14px; justify-content: center; aspect-ratio: 9 / 16; }
 .reel-pending ol { margin: 0; padding-left: 18px; color: #d5dde3; }
+.reel-script { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.reel-script label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.reel-script input { width: 100%; }

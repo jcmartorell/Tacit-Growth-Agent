@@ -8,10 +8,10 @@ const nextConfig: NextConfig = {
     // Las claves son globs (picomatch): "*" cubre el segmento dinámico [id]
     "/api/img/*": ["./assets/fonts/**"],
     // Reels: fuentes y el binario de ffmpeg en las rutas que generan o publican video
-    "/api/cron/*": ["./assets/fonts/**", "./node_modules/ffmpeg-static/ffmpeg"],
-    "/contenido": ["./assets/fonts/**", "./node_modules/ffmpeg-static/ffmpeg"],
+    "/api/cron/*": ["./assets/fonts/**", "./node_modules/ffmpeg-static/ffmpeg", "./node_modules/@napi-rs/canvas-linux-x64-gnu/**"],
+    "/contenido": ["./assets/fonts/**", "./node_modules/ffmpeg-static/ffmpeg", "./node_modules/@napi-rs/canvas-linux-x64-gnu/**"],
   },
-  serverExternalPackages: ["sharp", "ffmpeg-static"],
+  serverExternalPackages: ["sharp", "ffmpeg-static", "@napi-rs/canvas"],
 };
 
 export default nextConfig;

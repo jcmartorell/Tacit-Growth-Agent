@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { guard } from "@/lib/action-result";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSettings, parseList, saveSettings, type GrowthSettings } from "@/lib/settings";
-import { runPipeline, type RunSummary } from "@/lib/pipeline/run";
-import { runEmail, type EmailSummary } from "@/lib/email/sender";
+import { runPipeline } from "@/lib/pipeline/run";
+import { runEmail } from "@/lib/email/sender";
 import { disconnectGmail } from "@/lib/email/gmail";
 import { emailSchemaReady } from "@/lib/schema";
 
@@ -19,39 +20,41 @@ function refresh() {
 }
 
 export async function markSent(messageId: string) {
-  await requireUser();
-  const db = createAdminClient();
-  const { data: msg, error } = await db
-    .from("outreach_messages")
-    .select("id, kind, prospect_id")
-    .eq("id", messageId)
-    .single();
-  if (error || !msg) throw new Error("Mensaje no encontrado.");
-
-  const now = new Date();
-  const upd = await db.from("outreach_messages").update({ status: "enviado", sent_at: now.toISOString() }).eq("id", msg.id);
-  if (upd.error) throw new Error(upd.error.message);
-
-  // Programa el siguiente mensaje de la secuencia
-  const idx = ORDER.indexOf(msg.kind as Kind);
-  const next = ORDER[idx + 1];
-  if (next) {
-    const s = await getSettings();
-    const days = s.followUpDays[next as Exclude<Kind, "invitacion">];
-    const due = new Date(now.getTime() + days * 86_400_000).toISOString();
-    const r = await db
+  return guard(async () => {
+    await requireUser();
+    const db = createAdminClient();
+    const { data: msg, error } = await db
       .from("outreach_messages")
-      .update({ due_at: due })
-      .eq("prospect_id", msg.prospect_id)
-      .eq("kind", next)
-      .eq("status", "borrador");
-    if (r.error) throw new Error(r.error.message);
-  }
-  if (msg.kind === "invitacion") {
-    const r = await db.from("prospects").update({ status: "enviado" }).eq("id", msg.prospect_id);
-    if (r.error) throw new Error(r.error.message);
-  }
-  refresh();
+      .select("id, kind, prospect_id")
+      .eq("id", messageId)
+      .single();
+    if (error || !msg) throw new Error("Mensaje no encontrado.");
+
+    const now = new Date();
+    const upd = await db.from("outreach_messages").update({ status: "enviado", sent_at: now.toISOString() }).eq("id", msg.id);
+    if (upd.error) throw new Error(upd.error.message);
+
+    // Programa el siguiente mensaje de la secuencia
+    const idx = ORDER.indexOf(msg.kind as Kind);
+    const next = ORDER[idx + 1];
+    if (next) {
+      const s = await getSettings();
+      const days = s.followUpDays[next as Exclude<Kind, "invitacion">];
+      const due = new Date(now.getTime() + days * 86_400_000).toISOString();
+      const r = await db
+        .from("outreach_messages")
+        .update({ due_at: due })
+        .eq("prospect_id", msg.prospect_id)
+        .eq("kind", next)
+        .eq("status", "borrador");
+      if (r.error) throw new Error(r.error.message);
+    }
+    if (msg.kind === "invitacion") {
+      const r = await db.from("prospects").update({ status: "enviado" }).eq("id", msg.prospect_id);
+      if (r.error) throw new Error(r.error.message);
+    }
+    refresh();
+  });
 }
 
 async function closeSequence(prospectId: string, status: "respondio" | "reunion" | "descartado", reason?: string) {
@@ -78,57 +81,71 @@ async function closeSequence(prospectId: string, status: "respondio" | "reunion"
 }
 
 export async function markReplied(prospectId: string) {
-  await closeSequence(prospectId, "respondio");
+  return guard(async () => {
+    await closeSequence(prospectId, "respondio");
+  });
 }
 
 export async function markMeeting(prospectId: string) {
-  await closeSequence(prospectId, "reunion");
+  return guard(async () => {
+    await closeSequence(prospectId, "reunion");
+  });
 }
 
 export async function discardProspect(prospectId: string) {
-  await closeSequence(prospectId, "descartado", "Descartado manualmente");
+  return guard(async () => {
+    await closeSequence(prospectId, "descartado", "Descartado manualmente");
+  });
 }
 
-export async function runNow(): Promise<RunSummary> {
-  await requireUser();
-  const summary = await runPipeline("manual");
-  refresh();
-  return summary;
+export async function runNow() {
+  return guard(async () => {
+    await requireUser();
+    const summary = await runPipeline("manual");
+    refresh();
+    return summary;
+  });
 }
 
-export async function sendEmailNow(): Promise<EmailSummary> {
-  await requireUser();
-  const r = await runEmail("manual");
-  refresh();
-  return r;
+export async function sendEmailNow() {
+  return guard(async () => {
+    await requireUser();
+    const r = await runEmail("manual");
+    refresh();
+    return r;
+  });
 }
 
 export async function disconnectGmailAction() {
-  await requireUser();
-  await disconnectGmail();
-  refresh();
+  return guard(async () => {
+    await requireUser();
+    await disconnectGmail();
+    refresh();
+  });
 }
 
 // Aprobar (o guardar) el primer correo de un prospecto, con asunto y texto editados
 export async function approveEmail(messageId: string, subject: string, body: string, approve: boolean) {
-  await requireUser();
-  const sub = subject.replace(/[\r\n]+/g, " ").trim();
-  const text = body.trim();
-  if (!sub || !text) throw new Error("Asunto y texto son obligatorios.");
-  if (sub.length > 120) throw new Error("El asunto es demasiado largo.");
-  const db = createAdminClient();
-  const { data: m, error } = await db.from("outreach_messages").select("prospect_id, kind, status").eq("id", messageId).single();
-  if (error || !m) throw new Error("Correo no encontrado.");
-  if (m.kind !== "correo_1" || m.status === "enviado") throw new Error("Este correo ya no se puede editar.");
-  const r1 = await db.from("outreach_messages")
-    .update({ subject: sub, body: text, ...(approve ? { status: "aprobado" } : {}) })
-    .eq("id", messageId);
-  if (r1.error) throw new Error(r1.error.message);
-  // El asunto es el mismo para todo el hilo
-  const r2 = await db.from("outreach_messages").update({ subject: sub })
-    .eq("prospect_id", m.prospect_id).in("kind", ["correo_2", "correo_3"]);
-  if (r2.error) throw new Error(r2.error.message);
-  refresh();
+  return guard(async () => {
+    await requireUser();
+    const sub = subject.replace(/[\r\n]+/g, " ").trim();
+    const text = body.trim();
+    if (!sub || !text) throw new Error("Asunto y texto son obligatorios.");
+    if (sub.length > 120) throw new Error("El asunto es demasiado largo.");
+    const db = createAdminClient();
+    const { data: m, error } = await db.from("outreach_messages").select("prospect_id, kind, status").eq("id", messageId).single();
+    if (error || !m) throw new Error("Correo no encontrado.");
+    if (m.kind !== "correo_1" || m.status === "enviado") throw new Error("Este correo ya no se puede editar.");
+    const r1 = await db.from("outreach_messages")
+      .update({ subject: sub, body: text, ...(approve ? { status: "aprobado" } : {}) })
+      .eq("id", messageId);
+    if (r1.error) throw new Error(r1.error.message);
+    // El asunto es el mismo para todo el hilo
+    const r2 = await db.from("outreach_messages").update({ subject: sub })
+      .eq("prospect_id", m.prospect_id).in("kind", ["correo_2", "correo_3"]);
+    if (r2.error) throw new Error(r2.error.message);
+    refresh();
+  });
 }
 
 export type SaveState = { ok: boolean; message: string } | null;
@@ -191,10 +208,13 @@ export async function saveConfig(_prev: SaveState, form: FormData): Promise<Save
     hour: num("c_hour", current.content.hour, 0, 23),
     pillars: text("c_pillars").split("\n").map((l) => l.trim()).filter(Boolean),
     languages: languages.length ? languages : ["es"],
+    guide: text("c_guide").trim().slice(0, 2000),
     reels: {
       active: form.get("r_active") === "on",
       days: [0, 1, 2, 3, 4, 5, 6].filter((i) => form.get(`r_day_${i}`) === "on"),
       hour: num("r_hour", current.content.reels.hour, 0, 23),
+      guide: text("r_guide").trim().slice(0, 2000),
+      music: (["piano", "corporativo", "metal"] as const).find((m) => m === text("r_music")) ?? "piano",
     },
   };
 

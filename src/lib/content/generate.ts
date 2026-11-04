@@ -19,6 +19,8 @@ export type PostMeta = {
   reel?: { hook: string; points: string[]; cta: string; seed: number };
   containerId?: string; // contenedor de Instagram en proceso (reels)
   renderedAt?: string;
+  style?: number;       // versión del estilo de video con que se generó
+  music?: string;       // música con que se generó
 };
 
 type Gen = {
@@ -118,12 +120,13 @@ async function generatePosts(s: GrowthSettings): Promise<GenerateSummary> {
       "Escribes el contenido de redes de Juan Carlos Martorell, fundador de Tacit, en primera persona.",
       `Qué es Tacit: ${s.tacitContext}`,
       `Reglas de estilo: ${s.writingRules}`,
+      c.guide ? `Indicaciones de Juan Carlos para los textos (tienen prioridad): ${c.guide}` : "",
       "Contenido de valor real para directivos de operaciones, RH y tecnología de empresas medianas y grandes.",
       "Nada de clichés de LinkedIn, ni listas de emojis, ni frases motivacionales vacías. Una idea clara por post.",
       "No inventes cifras, clientes ni casos. Si das un ejemplo, que sea claramente ilustrativo.",
       "Menciona a Tacit solo si viene natural; la mayoría de los posts deben aportar valor sin vender.",
       langRule,
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
     const prompt = [
       `Tema de esta semana: ${pillar}`,
       recentTopics.length ? `Temas ya publicados, no los repitas:\n- ${recentTopics.join("\n- ")}` : "",

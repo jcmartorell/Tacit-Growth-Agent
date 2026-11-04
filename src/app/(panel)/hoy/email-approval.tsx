@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { approveEmail, discardProspect } from "../actions";
+import { unwrap } from "@/lib/action-result";
 
 export function EmailApprovalCard(props: {
   id: string; prospectId: string; name: string; meta: string; email: string; subject: string; body: string;
@@ -13,7 +14,7 @@ export function EmailApprovalCard(props: {
   const run = (fn: () => Promise<unknown>, ok: string) =>
     start(async () => {
       setMsg(null);
-      try { await fn(); setMsg({ ok: true, text: ok }); }
+      try { unwrap(await fn()); setMsg({ ok: true, text: ok }); }
       catch (e) { setMsg({ ok: false, text: e instanceof Error ? e.message : "Error" }); }
     });
 

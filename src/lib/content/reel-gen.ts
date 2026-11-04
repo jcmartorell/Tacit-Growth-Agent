@@ -69,8 +69,10 @@ export async function generateReels(s: GrowthSettings): Promise<GenerateSummary>
       "El gancho debe detener el scroll: una afirmación concreta y sorprendente sobre cómo operan las empresas, no una pregunta genérica.",
       "Cada idea es una frase corta que se entiende sola. Nada de clichés, emojis ni signos de exclamación.",
       "No inventes cifras ni clientes.",
+      s.content.guide ? `Indicaciones de Juan Carlos para los textos (tienen prioridad): ${s.content.guide}` : "",
+      r.guide ? `Indicaciones específicas para reels (tienen prioridad): ${r.guide}` : "",
       langRule,
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
     const prompt = [
       `Eje temático: ${pillar}`,
       recentTopics.length ? `Temas de reels anteriores, no los repitas:\n- ${recentTopics.join("\n- ")}` : "",

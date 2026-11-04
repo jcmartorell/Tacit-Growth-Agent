@@ -2,8 +2,9 @@
 
 import { useActionState, useState, useTransition } from "react";
 import {
-  backToDraft, connectIg, discardPost, generateNow, publishNow, renderReelNow, savePost, type ConnState,
+  backToDraft, connectIg, discardPost, generateNow, publishNow, renderReelNow, saveReelScript, savePost, type ConnState,
 } from "./actions";
+import { unwrap } from "@/lib/action-result";
 
 export type PostView = {
   id: string;
@@ -20,7 +21,7 @@ export type PostView = {
   imageUrl: string | null;
   format: "image" | "reel";
   videoUrl: string | null;
-  script: string[] | null;
+  reel: { hook: string; points: string[]; cta: string } | null;
   processing: boolean;
 };
 
@@ -34,7 +35,7 @@ function useAction() {
     start(async () => {
       setMsg(null);
       try {
-        await fn();
+        unwrap(await fn());
         if (okText) setMsg({ ok: true, text: okText });
       } catch (e) {
         setMsg({ ok: false, text: e instanceof Error ? e.message : "Error" });
@@ -75,7 +76,6 @@ export function PostCard({ p }: { p: PostView }) {
           ) : (
             <div className="post-img reel-pending stack">
               <span className="small">Video pendiente</span>
-              {p.script && <ol className="small">{p.script.map((l, i) => <li key={i}>{l}</li>)}</ol>}
               <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => renderReelNow(p.id), "Video generado.")}>
                 {pending ? "Generando… (~30 s)" : "Generar video ahora"}
               </button>
@@ -87,6 +87,8 @@ export function PostCard({ p }: { p: PostView }) {
           <img src={p.imageUrl} alt="Imagen del post" className="post-img" loading="lazy" />
         )}
         <div className="stack" style={{ flex: 1 }}>
+          {p.format === "reel" && p.reel && editable && <ReelScriptEditor id={p.id} reel={p.reel} hasVideo={Boolean(p.videoUrl)} />}
+          {editable && p.format === "reel" && <span className="small muted">Texto de la publicación (caption)</span>}
           {editable ? (
             <>
               <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={p.channel === "instagram" ? 10 : 14} />
@@ -136,6 +138,43 @@ export function PostCard({ p }: { p: PostView }) {
   );
 }
 
+function ReelScriptEditor({ id, reel, hasVideo }: { id: string; reel: { hook: string; points: string[]; cta: string }; hasVideo: boolean }) {
+  const [hook, setHook] = useState(reel.hook);
+  const [points, setPoints] = useState<string[]>([0, 1, 2].map((i) => reel.points[i] ?? ""));
+  const [cta, setCta] = useState(reel.cta);
+  const { pending, msg, run } = useAction();
+  const changed = hook !== reel.hook || cta !== reel.cta || points.some((x, i) => x !== (reel.points[i] ?? ""));
+  return (
+    <details className="reel-script" open={!hasVideo}>
+      <summary className="small"><strong>Textos del video</strong> (editar)</summary>
+      <div className="stack" style={{ marginTop: 8 }}>
+        <label className="small">Gancho (primer segundo, máx. 12 palabras)
+          <input value={hook} onChange={(e) => setHook(e.target.value)} />
+        </label>
+        {points.map((v, i) => (
+          <label key={i} className="small">Idea {i + 1} (máx. 16 palabras)
+            <input value={v} onChange={(e) => setPoints(points.map((x, j) => (j === i ? e.target.value : x)))} />
+          </label>
+        ))}
+        <label className="small">Cierre (máx. 12 palabras)
+          <input value={cta} onChange={(e) => setCta(e.target.value)} />
+        </label>
+        <div className="row-actions">
+          <button type="button" disabled={pending || !changed} onClick={() => run(() => saveReelScript(id, hook, points, cta), "Textos guardados y video nuevo generado.")}>
+            {pending ? "Generando video… (~40 s)" : "Guardar textos y regenerar video"}
+          </button>
+          {hasVideo && !changed && (
+            <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => renderReelNow(id), "Video regenerado.")}>
+              {pending ? "…" : "Regenerar video"}
+            </button>
+          )}
+        </div>
+        {msg && <p className={msg.ok ? "alert alert-ok" : "alert alert-error"}>{msg.text}</p>}
+      </div>
+    </details>
+  );
+}
+
 export function GenerateButton() {
   const { pending, msg, setMsg, run } = useAction();
   return (
@@ -146,7 +185,7 @@ export function GenerateButton() {
           disabled={pending}
           onClick={() =>
             run(async () => {
-              const r = await generateNow();
+              const r = unwrap(await generateNow());
               setMsg({
                 ok: r.errores.length === 0,
                 text: r.creados > 0
@@ -178,7 +217,7 @@ export function IgConnectForm() {
   );
 }
 
-export function DisconnectButton({ action, label }: { action: () => Promise<void>; label: string }) {
+export function DisconnectButton({ action, label }: { action: () => Promise<unknown>; label: string }) {
   const { pending, msg, run } = useAction();
   return (
     <span className="action">
