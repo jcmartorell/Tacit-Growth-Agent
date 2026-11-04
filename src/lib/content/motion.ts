@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCanvas, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 import ffmpegPath from "ffmpeg-static";
+import { typographic } from "@/lib/typography";
 
 // Reel 1080x1920 a 30 fps con el estilo de tacit.guru: fondo claro, esfera de partículas de colores,
 // grafo 3D, flujo en perspectiva, red que se ordena y partículas que forman la marca.
@@ -110,7 +111,7 @@ type Word = { text: string; x: number; y: number; accent: boolean };
 type TextBlock = { words: Word[]; font: string; size: number; bottom: number };
 
 function layout(ctx: SKRSContext2D, text: string, family: string, weight: number, size0: number, top: number, opts: { accentLast?: boolean; center?: boolean; maxH?: number } = {}): TextBlock {
-  const words = text.split(/\s+/).filter(Boolean);
+  const words = typographic(text).split(/\s+/).filter(Boolean);
   const maxW = W - MARGIN * 2;
   for (let size = size0; size >= 40; size -= 6) {
     const font = `${weight} ${size}px "${family}"`;

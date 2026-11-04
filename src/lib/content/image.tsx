@@ -1,4 +1,5 @@
 import "server-only";
+import { typographic } from "@/lib/typography";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
@@ -34,7 +35,9 @@ function headlineSize(text: string) {
   return 64;
 }
 
-export async function renderPostJpeg(headline: string, subline: string, lang: "es" | "en"): Promise<Buffer> {
+export async function renderPostJpeg(rawHeadline: string, rawSubline: string, lang: "es" | "en"): Promise<Buffer> {
+  const headline = typographic(rawHeadline);
+  const subline = typographic(rawSubline);
   const f = await loadFonts();
   const png = new ImageResponse(
     (

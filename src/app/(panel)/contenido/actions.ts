@@ -10,6 +10,7 @@ import { publishDue } from "@/lib/content/publish";
 import { connectInstagram } from "@/lib/content/instagram";
 import { disconnect } from "@/lib/content/connections";
 import { renderReelForPost } from "@/lib/content/render";
+import { typographic } from "@/lib/typography";
 import type { PostMeta } from "@/lib/content/generate";
 
 // Cada acción verifica la sesión: una server action es un endpoint público.
@@ -116,7 +117,7 @@ export async function renderReelNow(id: string) {
 export async function saveReelScript(id: string, hook: string, points: string[], cta: string) {
   return guard(async () => {
     await requireUser();
-    const one = (t: string) => String(t ?? "").replace(/\s+/g, " ").trim();
+    const one = (t: string) => typographic(String(t ?? "")).replace(/\s+/g, " ").trim();
     const words = (t: string) => t.split(" ").filter(Boolean).length;
     const h = one(hook), c = one(cta);
     const ps = points.map(one).filter(Boolean);

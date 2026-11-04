@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateJson } from "@/lib/llm";
 import { getSettings, type GrowthSettings } from "@/lib/settings";
 import { nextSlots } from "@/lib/time";
+import { typographic } from "@/lib/typography";
 import { generateReels } from "@/lib/content/reel-gen";
 
 // Agente de contenido: para cada horario libre de la semana genera un tema
@@ -56,7 +57,7 @@ export function languageOk(g: Gen, lang: "es" | "en"): boolean {
   return lang === "es" ? r > 0.12 : r < 0.06;
 }
 
-const clean = (t: string) => t.replace(/\s*[—–]\s*/g, ", ").trim();
+const clean = (t: string) => typographic(t).replace(/\s*[—–]\s*/g, ", ").trim();
 const cut = (t: string, max: number) => (t.length <= max ? t : t.slice(0, t.lastIndexOf(" ", max)).trim());
 
 export type GenerateSummary = { creados: number; horarios: number; errores: string[] };

@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateJson } from "@/lib/llm";
 import type { GrowthSettings } from "@/lib/settings";
 import { nextSlots } from "@/lib/time";
+import { typographic } from "@/lib/typography";
 import { spanishRatio, type GenerateSummary, type PostMeta } from "@/lib/content/generate";
 
 // Agente de guiones de reels: un reel por cada horario configurado (por defecto diario).
@@ -26,7 +27,7 @@ const SCHEMA = {
   },
 };
 
-const clean = (t: string) => String(t ?? "").replace(/\s*[—–]\s*/g, ", ").replace(/\s+/g, " ").trim();
+const clean = (t: string) => typographic(String(t ?? "")).replace(/\s*[—–]\s*/g, ", ").replace(/\s+/g, " ").trim();
 const limitWords = (t: string, n: number) => clean(t).split(" ").slice(0, n).join(" ");
 
 export async function generateReels(s: GrowthSettings): Promise<GenerateSummary> {
