@@ -9,21 +9,18 @@ import { spanishRatio, type GenerateSummary, type PostMeta } from "@/lib/content
 // Agente de guiones de reels: un reel por cada horario configurado (por defecto diario).
 // El video se genera después (render.ts) y se guarda en Supabase Storage.
 
-type ReelGen = { tema: string; gancho: string; ideas: string[]; cierre: string; caption: string };
+type ReelGen = { tema: string; gancho: string; idea_1: string; idea_2: string; idea_3: string; cierre: string; caption: string };
 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["tema", "gancho", "ideas", "cierre", "caption"],
+  required: ["tema", "gancho", "idea_1", "idea_2", "idea_3", "cierre", "caption"],
   properties: {
     tema: { type: "string", description: "Título interno, máximo 80 caracteres" },
     gancho: { type: "string", description: "Frase que detiene el scroll en el primer segundo: 3 a 7 palabras, provocadora pero cierta" },
-    ideas: {
-      type: "array",
-      minItems: 3,
-      maxItems: 3,
-      items: { type: "string", description: "Idea corta y concreta, 5 a 10 palabras" },
-    },
+    idea_1: { type: "string", description: "Primera idea corta y concreta, 5 a 10 palabras" },
+    idea_2: { type: "string", description: "Segunda idea corta y concreta, 5 a 10 palabras" },
+    idea_3: { type: "string", description: "Tercera idea corta y concreta, 5 a 10 palabras" },
     cierre: { type: "string", description: "Cierre de 3 a 8 palabras que invite a pensar o actuar" },
     caption: { type: "string", description: "Caption de Instagram, 150 a 500 caracteres, con 3 a 5 hashtags al final" },
   },
@@ -86,7 +83,7 @@ export async function generateReels(s: GrowthSettings): Promise<GenerateSummary>
         detail: { pillar, lang, slot: slot.toISOString(), retry: Boolean(extra) },
       });
       const ok = (g: ReelGen) => {
-        const ratio = spanishRatio(`${g.gancho} ${g.ideas.join(" ")} ${g.caption}`);
+        const ratio = spanishRatio(`${g.gancho} ${g.idea_1} ${g.idea_2} ${g.idea_3} ${g.caption}`);
         return lang === "es" ? ratio > 0.1 : ratio < 0.06;
       };
       let g = await ask();
@@ -94,7 +91,7 @@ export async function generateReels(s: GrowthSettings): Promise<GenerateSummary>
         g = await ask(`\n\nTu respuesta anterior estaba en el idioma equivocado. ${langRule}`);
         if (!ok(g)) throw new Error(`El agente no respetó el idioma (${lang}).`);
       }
-      const ideas = (g.ideas ?? []).map((i) => limitWords(i, 14)).filter(Boolean).slice(0, 3);
+      const ideas = [g.idea_1, g.idea_2, g.idea_3].map((i) => limitWords(i, 14)).filter(Boolean);
       if (!g.gancho || ideas.length < 3 || !g.cierre) throw new Error("Guion incompleto.");
 
       const meta: PostMeta = {
