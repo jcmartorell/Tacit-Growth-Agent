@@ -17,7 +17,7 @@ export type PostMeta = {
   headline: string;   // título de la imagen
   subline: string;    // subtítulo de la imagen
   format?: "image" | "reel";
-  reel?: { hook: string; points: string[]; cta: string; seed: number };
+  reel?: { hook: string; points: string[]; cta: string; seed: number; visuals?: string[]; theme?: "light" | "dark"; format?: string };
   containerId?: string; // contenedor de Instagram en proceso (reels)
   renderedAt?: string;
   style?: number;       // versión del estilo de video con que se generó

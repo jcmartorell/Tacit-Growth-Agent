@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { createCanvas, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 import ffmpegPath from "ffmpeg-static";
 import { typographic } from "@/lib/typography";
+import { resolveVisuals, type VisualKey } from "@/lib/content/visuals";
+export { VISUAL_KEYS, VISUALS_INFO, type VisualKey } from "@/lib/content/visuals";
 
 // Reel 1080x1920 a 30 fps con el estilo de tacit.guru: fondo claro, esfera de partículas de colores,
 // grafo 3D, flujo en perspectiva, red que se ordena y partículas que forman la marca.
@@ -18,18 +20,19 @@ export type ReelScript = {
   lang: "es" | "en";
   seed: number;      // varía colores, formas y música
   music?: MusicStyle;
+  visuals?: string[]; // animación del gancho y de cada idea (VisualKey)
+  theme?: "light" | "dark";
 };
 
 const W = 1080;
 const H = 1920;
 const FPS = 30;
-const BG = "#FDFCFA";
-const INK = "#18232E";
 const PULSE = "#1A9E78";
-const MIST = "#8A9BA8";
-const GRID = "#D9D3C7";
+const AMBER = "#D9951E";
 // Colores de la esfera de la web
 const PALETTE = ["#2A7A2A", "#9A2A7A", "#1A7A6A", "#AA3A2A", "#5A3AAA", "#2A5A9A", "#AA6A1A", "#0A9A8A", "#BA2A9A", "#2A9A2A", "#DA7A1A", "#DA3A3A"];
+
+type Theme = { bg: string; ink: string; mist: string; grid: string; track: string; card: string; cardLine: string; cardBar: string; shadow: string; pal: string[] };
 
 const MARGIN = 96;
 const TEXT_TOP = 330;
@@ -55,9 +58,27 @@ function rng(seed: number) {
 }
 
 function hexRgb(h: string): [number, number, number] {
+  if (h.startsWith("rgb")) {
+    const m = h.match(/\d+/g) ?? ["0", "0", "0"];
+    return [Number(m[0]), Number(m[1]), Number(m[2])];
+  }
   const n = parseInt(h.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
+function toHex(c: string) {
+  return "#" + hexRgb(c).map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+const LIGHT: Theme = {
+  bg: "#FDFCFA", ink: "#18232E", mist: "#8A9BA8", grid: "#D9D3C7", track: "#EEE9DF",
+  card: "#FFFFFF", cardLine: "#E4DDD0", cardBar: "#E9E4DA", shadow: "rgba(24,35,46,0.08)", pal: PALETTE,
+};
+const DARK: Theme = {
+  bg: "#141E28", ink: "#F4EFE6", mist: "#8A9BA8", grid: "#2B3A47", track: "#24323E",
+  card: "#1D2A36", cardLine: "#34465A", cardBar: "#2C3B4A", shadow: "rgba(0,0,0,0.3)",
+  pal: PALETTE.map((c) => toHex(mix(c, "#FFFFFF", 0.35))),
+};
+
 function mix(a: string, b: string, k: number) {
   const x = hexRgb(a), y = hexRgb(b);
   return `rgb(${Math.round(lerp(x[0], y[0], k))},${Math.round(lerp(x[1], y[1], k))},${Math.round(lerp(x[2], y[2], k))})`;
@@ -152,7 +173,7 @@ function layout(ctx: SKRSContext2D, text: string, family: string, weight: number
   throw new Error("Texto imposible de acomodar.");
 }
 
-function drawText(ctx: SKRSContext2D, b: TextBlock, lt: number, dur: number, start: number, step: number, color = INK) {
+function drawText(ctx: SKRSContext2D, b: TextBlock, lt: number, dur: number, start: number, step: number, color: string) {
   const out = clamp((dur - lt) / 0.35);
   ctx.font = b.font;
   ctx.textBaseline = "alphabetic";
@@ -185,18 +206,18 @@ const MARK_SEGS: [number, number, number, number][] = [
   [40, 92, 166, 92], [346, 92, 472, 92], [104, 92, 256, 244], [408, 92, 256, 244], [256, 244, 256, 432],
 ];
 
-function drawChrome(ctx: SKRSContext2D, t: number, total: number) {
+function drawChrome(ctx: SKRSContext2D, t: number, total: number, th: Theme) {
   drawMark(ctx, MARGIN, 112, 52);
-  ctx.fillStyle = INK;
+  ctx.fillStyle = th.ink;
   ctx.font = `400 46px "Instrument Serif"`;
   ctx.textBaseline = "alphabetic";
   ctx.fillText("Tacit", MARGIN + 66, 156);
-  ctx.fillStyle = MIST;
+  ctx.fillStyle = th.mist;
   ctx.font = `400 30px "DM Sans"`;
   const label = "tacit.guru";
   ctx.fillText(label, W - MARGIN - ctx.measureText(label).width, 152);
   // barra de progreso
-  ctx.fillStyle = "#EEE9DF";
+  ctx.fillStyle = th.track;
   ctx.fillRect(0, 0, W, 8);
   ctx.fillStyle = PULSE;
   ctx.fillRect(0, 0, W * clamp(t / total), 8);
@@ -206,6 +227,8 @@ function drawChrome(ctx: SKRSContext2D, t: number, total: number) {
 type Particle = { p: V3; from: V3; color: string; size: number; delay: number };
 
 type World = {
+  th: Theme;
+  seed: number;
   particles: Particle[];
   constellation: number[];
   graph: { nodes: V3[]; colors: string[]; edges: [number, number][]; order: number[] };
@@ -214,9 +237,9 @@ type World = {
   mark: { targets: { x: number; y: number }[]; from: { x: number; y: number }[]; delay: number[] };
 };
 
-function buildWorld(seed: number): World {
+function buildWorld(seed: number, th: Theme): World {
   const r = rng(seed * 7919 + 17);
-  const pick = () => PALETTE[Math.floor(r() * PALETTE.length)];
+  const pick = () => th.pal[Math.floor(r() * th.pal.length)];
 
   // Esfera de partículas
   const sph = fibSphere(820, r, 0.05);
@@ -319,7 +342,7 @@ function buildWorld(seed: number): World {
     delay: targets.map(() => r() * 0.5),
   };
 
-  return { particles, constellation, graph, flow, lattice, mark };
+  return { th, seed, particles, constellation, graph, flow, lattice, mark };
 }
 
 // Esfera de partículas (escena del gancho y fondo tenue de otras escenas)
@@ -342,7 +365,7 @@ function drawSphere(ctx: SKRSContext2D, w: World, t: number, lt: number, alpha: 
   if (intro) {
     const k = easeOut((lt - 1.2) / 1.2);
     if (k > 0) {
-      ctx.strokeStyle = INK;
+      ctx.strokeStyle = w.th.ink;
       ctx.lineWidth = 2;
       const cp = w.constellation.map((i) => {
         const r3 = rot(w.particles[i].p, ry, rx);
@@ -381,7 +404,7 @@ function drawGraph(ctx: SKRSContext2D, w: World, t: number, lt: number, alpha: n
     const A = P[a], B = P[b];
     const depth = (A.d + B.d) / 2;
     ctx.globalAlpha = alpha * (0.15 + 0.4 * depth);
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = w.th.ink;
     ctx.lineWidth = 1.5 + 1.5 * depth;
     ctx.beginPath();
     ctx.moveTo(A.x, A.y);
@@ -418,7 +441,7 @@ function drawGraph(ctx: SKRSContext2D, w: World, t: number, lt: number, alpha: n
     ctx.beginPath();
     ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = BG;
+    ctx.strokeStyle = w.th.bg;
     ctx.lineWidth = 3;
     ctx.stroke();
   }
@@ -435,7 +458,7 @@ function drawFlow(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: n
 
   // Retícula del plano
   const gridIn = easeOut(lt / 0.8);
-  ctx.strokeStyle = GRID;
+  ctx.strokeStyle = w.th.grid;
   ctx.lineWidth = 1.5;
   for (let i = -6; i <= 6; i++) {
     const u = i * 0.2;
@@ -498,7 +521,7 @@ function drawFlow(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: n
     const base = P(f.stations[i]);
     const top = P({ ...f.stations[i], y: -0.32 });
     ctx.globalAlpha = alpha * 0.5;
-    ctx.strokeStyle = MIST;
+    ctx.strokeStyle = w.th.mist;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 8]);
     ctx.beginPath();
@@ -513,18 +536,18 @@ function drawFlow(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: n
     // brillo cuando pasa una partícula
     const near = reveal >= 1 && f.particles.some((q) => Math.abs(((lt * 0.16 + q.off) % 1) - f.stationU[i]) < 0.012);
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = "rgba(24,35,46,0.08)";
+    ctx.fillStyle = w.th.shadow;
     roundRect(ctx, x + 6 * u, y + 10 * u, cw, ch, 18 * u);
     ctx.fill();
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = w.th.card;
     roundRect(ctx, x, y, cw, ch, 18 * u);
     ctx.fill();
-    ctx.strokeStyle = near ? PULSE : "#E4DDD0";
+    ctx.strokeStyle = near ? PULSE : w.th.cardLine;
     ctx.lineWidth = near ? 4 : 2;
     ctx.stroke();
-    ctx.fillStyle = PALETTE[(i * 3 + 1) % PALETTE.length];
+    ctx.fillStyle = w.th.pal[(i * 3 + 1) % w.th.pal.length];
     ctx.fillRect(x + 22 * u, y + 26 * u, 22 * u, 22 * u);
-    ctx.fillStyle = "#E9E4DA";
+    ctx.fillStyle = w.th.cardBar;
     roundRect(ctx, x + 58 * u, y + 28 * u, 140 * u, 16 * u, 8 * u); ctx.fill();
     roundRect(ctx, x + 22 * u, y + 70 * u, 180 * u, 14 * u, 7 * u); ctx.fill();
     roundRect(ctx, x + 22 * u, y + 94 * u, 120 * u, 14 * u, 7 * u); ctx.fill();
@@ -561,7 +584,7 @@ function drawLattice(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha
   });
   const settled = easeOut((lt - 2.4) / 0.7);
   if (settled > 0) {
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = w.th.ink;
     ctx.lineWidth = 1.5;
     for (const [a, b] of L.edges) {
       ctx.globalAlpha = alpha * settled * (0.06 + 0.2 * (pos[a].d + pos[b].d) / 2);
@@ -631,18 +654,535 @@ function drawMarkScene(ctx: SKRSContext2D, w: World, _t: number, lt: number, alp
 }
 
 type Visual = (ctx: SKRSContext2D, w: World, t: number, lt: number, alpha: number) => void;
-const VISUALS: Visual[] = [
-  (c, w, t, lt, a) => drawSphere(c, w, t, lt, a, true),
-  drawGraph,
-  drawFlow,
-  drawLattice,
-  drawMarkScene,
-];
+
+// ---------- utilidades de dibujo ----------
+function person(ctx: SKRSContext2D, x: number, y: number, r: number, color: string) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y - r * 0.28, r * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y + r * 0.62, r * 0.58, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+}
+function card(ctx: SKRSContext2D, w: World, x: number, y: number, cw: number, ch: number, stroke?: string, lw = 2) {
+  ctx.fillStyle = w.th.shadow;
+  roundRect(ctx, x + cw * 0.025, y + ch * 0.08, cw, ch, Math.min(18, ch * 0.18));
+  ctx.fill();
+  ctx.fillStyle = w.th.card;
+  roundRect(ctx, x, y, cw, ch, Math.min(18, ch * 0.18));
+  ctx.fill();
+  ctx.strokeStyle = stroke ?? w.th.cardLine;
+  ctx.lineWidth = lw;
+  ctx.stroke();
+}
+function bars(ctx: SKRSContext2D, w: World, x: number, y: number, widths: number[], h: number, gap: number) {
+  ctx.fillStyle = w.th.cardBar;
+  widths.forEach((bw, i) => { roundRect(ctx, x, y + i * (h + gap), bw, h, h / 2); ctx.fill(); });
+}
+function quad(a: { x: number; y: number }, c: { x: number; y: number }, b: { x: number; y: number }, t: number) {
+  const u = 1 - t;
+  return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y };
+}
+function partialQuad(ctx: SKRSContext2D, a: { x: number; y: number }, c: { x: number; y: number }, b: { x: number; y: number }, p: number) {
+  ctx.beginPath();
+  const n = 40;
+  for (let i = 0; i <= n; i++) {
+    const q = quad(a, c, b, (i / n) * p);
+    if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+  }
+  ctx.stroke();
+}
+// Datos aleatorios estables por animación (no dependen del orden en que se dibujan)
+function seeded(w: World, salt: number) { return rng(w.seed * 131 + salt); }
+
+// ---------- conversaciones que fluyen a un centro ----------
+function drawChat(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const hub = { x: CX, y: CY + 120 };
+  const av = Array.from({ length: 5 }, (_, i) => {
+    const a = Math.PI * (1.12 + i * 0.19);
+    return { x: hub.x + Math.cos(a) * 380, y: hub.y + Math.sin(a) * 330, color: w.th.pal[(i * 5 + 2) % w.th.pal.length] };
+  });
+  const lines = easeOut(lt / 0.7);
+  ctx.strokeStyle = w.th.grid;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 10]);
+  for (const a of av) {
+    ctx.globalAlpha = alpha * lines;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(hub.x, hub.y); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // núcleo
+  const ring = (lt * 0.8) % 1;
+  ctx.globalAlpha = alpha * (1 - ring) * 0.5;
+  ctx.strokeStyle = PULSE; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(hub.x, hub.y, 40 + ring * 90, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = alpha * easeBack(lt / 0.5);
+  ctx.fillStyle = PULSE;
+  ctx.beginPath(); ctx.arc(hub.x, hub.y, 40 * easeBack(lt / 0.5), 0, Math.PI * 2); ctx.fill();
+  drawMark(ctx, hub.x - 22, hub.y - 26, 44, w.th.bg);
+  // personas
+  av.forEach((a, i) => {
+    const k = easeBack((lt - 0.1 - i * 0.08) / 0.4);
+    if (k <= 0) return;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = w.th.card;
+    ctx.beginPath(); ctx.arc(a.x, a.y, 48 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = a.color; ctx.lineWidth = 5; ctx.stroke();
+    person(ctx, a.x, a.y, 40 * k, a.color);
+  });
+  // burbujas
+  for (let k = 0; k < 12; k++) {
+    const local = lt - (0.5 + k * 0.33);
+    if (local < 0) continue;
+    const ph = (local % 3.96) / 1.8;
+    if (ph > 1) continue;
+    const a = av[(k * 3) % 5];
+    const ctrl = { x: (a.x + hub.x) / 2 + (a.x < hub.x ? -60 : 60), y: Math.min(a.y, hub.y) - 60 };
+    const travel = easeInOut((ph - 0.22) / 0.78);
+    const pos = quad({ x: a.x, y: a.y - 70 }, ctrl, hub, travel);
+    const sc = easeBack(ph / 0.2) * (1 - 0.75 * travel);
+    ctx.globalAlpha = alpha * clamp((1 - ph) / 0.12);
+    if (travel > 0.85) {
+      ctx.fillStyle = a.color;
+      ctx.fillRect(pos.x - 6, pos.y - 6, 12, 12);
+      continue;
+    }
+    const bw = 170 * sc, bh = 74 * sc;
+    card(ctx, w, pos.x - bw / 2, pos.y - bh, bw, bh, a.color, 3);
+    ctx.fillStyle = w.th.card;
+    ctx.beginPath(); ctx.moveTo(pos.x - 10 * sc, pos.y - 2); ctx.lineTo(pos.x, pos.y + 14 * sc); ctx.lineTo(pos.x + 10 * sc, pos.y - 2); ctx.fill();
+    bars(ctx, w, pos.x - bw / 2 + 18 * sc, pos.y - bh + 18 * sc, [120 * sc, 80 * sc], 12 * sc, 10 * sc);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- organigrama formal contra la red real ----------
+function drawOrgchart(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const N = [
+    { x: 540, y: 1000 },
+    { x: 220, y: 1210 }, { x: 540, y: 1210 }, { x: 860, y: 1210 },
+    { x: 140, y: 1430 }, { x: 300, y: 1430 }, { x: 460, y: 1430 }, { x: 620, y: 1430 }, { x: 780, y: 1430 }, { x: 940, y: 1430 },
+  ].map((p, i) => ({ x: p.x, y: p.y + Math.sin(lt * 1.3 + i) * 4 }));
+  const parent = [-1, 0, 0, 0, 1, 1, 2, 2, 3, 3];
+  const real: [number, number][] = [[4, 9], [5, 7], [6, 8], [4, 2], [9, 1], [7, 0]];
+  const formalIn = easeOut(lt / 0.8);
+  const fade = lerp(1, 0.3, easeInOut((lt - 1.5) / 0.8));
+  ctx.strokeStyle = w.th.mist; ctx.lineWidth = 3;
+  for (let i = 1; i < N.length; i++) {
+    const a = N[parent[i]], b = N[i];
+    const midY = (a.y + b.y) / 2;
+    ctx.globalAlpha = alpha * formalIn * fade;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y + 40); ctx.lineTo(a.x, midY); ctx.lineTo(b.x, midY); ctx.lineTo(b.x, b.y - 40); ctx.stroke();
+  }
+  // red real
+  real.forEach(([i, j], k) => {
+    const p = easeInOut((lt - 1.6 - k * 0.22) / 0.7);
+    if (p <= 0) return;
+    const a = N[i], b = N[j];
+    const c = { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) - 120 - k * 18 };
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.strokeStyle = PULSE; ctx.lineWidth = 4;
+    partialQuad(ctx, a, c, b, p);
+    if (p >= 1) {
+      const q = quad(a, c, b, (lt * 0.5 + k * 0.17) % 1);
+      ctx.fillStyle = PULSE;
+      ctx.beginPath(); ctx.arc(q.x, q.y, 7, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+  const active = new Set(real.flat());
+  N.forEach((p, i) => {
+    const k = easeBack((lt - 0.05 * i) / 0.4);
+    if (k <= 0) return;
+    const cw = (i === 0 ? 150 : 120) * k, ch = (i === 0 ? 96 : 80) * k;
+    const lit = lt > 1.6 && active.has(i);
+    ctx.globalAlpha = alpha;
+    card(ctx, w, p.x - cw / 2, p.y - ch / 2, cw, ch, lit ? PULSE : undefined, lit ? 4 : 2);
+    person(ctx, p.x, p.y - 4 * k, 34 * k, w.th.pal[(i * 7 + 3) % w.th.pal.length]);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ---------- una persona clave se va ----------
+function drawDeparture(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const r = seeded(w, 3);
+  const pts: { x: number; y: number }[] = [];
+  let guard = 0;
+  while (pts.length < 15 && guard++ < 2000) {
+    const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 340;
+    const p = { x: CX + Math.cos(a) * d, y: CY + 60 + Math.sin(a) * d * 0.9 };
+    if (pts.every((q) => Math.hypot(q.x - p.x, q.y - p.y) > 120)) pts.push(p);
+  }
+  const key = pts.map((p, i) => ({ i, d: Math.hypot(p.x - CX, p.y - CY - 60) })).sort((a, b) => a.d - b.d)[0].i;
+  const edges: [number, number][] = [];
+  pts.forEach((a, i) => {
+    pts.map((b, j) => ({ j, d: Math.hypot(a.x - b.x, a.y - b.y) })).filter((o) => o.j !== i).sort((x, y) => x.d - y.d).slice(0, i === key ? 8 : 2)
+      .forEach(({ j }) => { if (!edges.some(([x, y]) => (x === i && y === j) || (x === j && y === i))) edges.push([i, j]); });
+  });
+  const L0 = 1.8;
+  const leave = clamp((lt - L0) / 1.5);
+  const broken = leave > 0.18;
+  const kp = { x: pts[key].x + Math.pow(leave, 2) * 760, y: pts[key].y - leave * 120 };
+  const linked = new Set(edges.filter((e) => e.includes(key)).flat());
+  ctx.lineWidth = 3;
+  edges.forEach(([a, b]) => {
+    const withKey = a === key || b === key;
+    const other = withKey ? pts[a === key ? b : a] : null;
+    const appear = easeOut((lt - 0.3) / 0.6);
+    if (withKey && other) {
+      if (!broken) {
+        ctx.globalAlpha = alpha * appear * 0.8; ctx.strokeStyle = PULSE;
+        ctx.beginPath(); ctx.moveTo(other.x, other.y); ctx.lineTo(kp.x, kp.y); ctx.stroke();
+      } else {
+        const stub = 1 - easeOut((leave - 0.18) / 0.3);
+        if (stub <= 0) return;
+        ctx.globalAlpha = alpha * stub * 0.7; ctx.strokeStyle = w.th.mist;
+        ctx.beginPath(); ctx.moveTo(other.x, other.y);
+        ctx.lineTo(lerp(other.x, pts[key].x, 0.35 * stub), lerp(other.y, pts[key].y, 0.35 * stub)); ctx.stroke();
+      }
+      return;
+    }
+    ctx.globalAlpha = alpha * appear * 0.35; ctx.strokeStyle = w.th.ink;
+    ctx.beginPath(); ctx.moveTo(pts[a].x, pts[a].y); ctx.lineTo(pts[b].x, pts[b].y); ctx.stroke();
+  });
+  // conocimiento que se dispersa
+  if (broken) {
+    const rr = seeded(w, 4);
+    const bt = lt - (L0 + 0.18 * 1.5);
+    for (let i = 0; i < 70; i++) {
+      const ang = rr() * Math.PI * 2, sp = 120 + rr() * 380, col = w.th.pal[Math.floor(rr() * w.th.pal.length)];
+      const k = clamp(bt / 1.6);
+      if (k >= 1) continue;
+      ctx.globalAlpha = alpha * (1 - k);
+      ctx.fillStyle = col;
+      const s = 9 * (1 - k * 0.5);
+      ctx.fillRect(pts[key].x + Math.cos(ang) * sp * easeOut(k) - s / 2, pts[key].y + Math.sin(ang) * sp * easeOut(k) - s / 2, s, s);
+    }
+    // hueco que queda
+    const g = easeOut((lt - 3.2) / 0.5);
+    if (g > 0) {
+      ctx.globalAlpha = alpha * g * (0.6 + 0.4 * Math.sin(lt * 4));
+      ctx.strokeStyle = w.th.mist; ctx.lineWidth = 3; ctx.setLineDash([8, 10]);
+      ctx.beginPath(); ctx.arc(pts[key].x, pts[key].y, 46, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  pts.forEach((p, i) => {
+    const k = easeBack((lt - 0.04 * i) / 0.4);
+    if (k <= 0) return;
+    if (i === key) {
+      ctx.globalAlpha = alpha * (1 - clamp((leave - 0.6) / 0.4));
+      ctx.fillStyle = PULSE;
+      ctx.beginPath(); ctx.arc(kp.x, kp.y, 42 * k, 0, Math.PI * 2); ctx.fill();
+      person(ctx, kp.x, kp.y, 36 * k, w.th.bg);
+      return;
+    }
+    const lost = broken && linked.has(i);
+    ctx.globalAlpha = alpha * (lost ? 0.55 : 1);
+    ctx.fillStyle = w.th.card;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 30 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = lost ? w.th.mist : w.th.pal[(i * 5) % w.th.pal.length]; ctx.lineWidth = 4; ctx.stroke();
+    person(ctx, p.x, p.y, 24 * k, lost ? w.th.mist : w.th.pal[(i * 5) % w.th.pal.length]);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ---------- radar que detecta y conecta ----------
+function drawRadar(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const c = { x: CX, y: CY + 40 }, R = 380;
+  const r = seeded(w, 5);
+  const blips = Array.from({ length: 14 }, () => ({ a: r() * Math.PI * 2, d: 0.25 + r() * 0.7, col: w.th.pal[Math.floor(r() * w.th.pal.length)] }))
+    .sort((x, y) => x.a - y.a);
+  const grow = easeOut(lt / 0.7);
+  ctx.strokeStyle = w.th.grid; ctx.lineWidth = 2;
+  for (let i = 1; i <= 4; i++) {
+    ctx.globalAlpha = alpha * grow;
+    ctx.beginPath(); ctx.arc(c.x, c.y, (R * i / 4) * grow, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(c.x - R * grow, c.y); ctx.lineTo(c.x + R * grow, c.y); ctx.moveTo(c.x, c.y - R * grow); ctx.lineTo(c.x, c.y + R * grow); ctx.stroke();
+  const speed = 2.1;
+  const sweep = lt * speed;
+  for (let k = 0; k < 26; k++) {
+    const a0 = sweep - k * 0.035;
+    ctx.globalAlpha = alpha * grow * 0.28 * (1 - k / 26);
+    ctx.fillStyle = PULSE;
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.arc(c.x, c.y, R, a0 - 0.035, a0); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = alpha * grow;
+  ctx.strokeStyle = PULSE; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.x + Math.cos(sweep) * R, c.y + Math.sin(sweep) * R); ctx.stroke();
+  const pos = blips.map((b) => ({ x: c.x + Math.cos(b.a) * b.d * R, y: c.y + Math.sin(b.a) * b.d * R, seen: b.a / speed, b }));
+  const link = easeInOut((lt - 3.1) / 0.9);
+  if (link > 0) {
+    ctx.strokeStyle = w.th.ink; ctx.lineWidth = 2.5; ctx.globalAlpha = alpha * 0.6;
+    const n = pos.length, upto = link * n;
+    ctx.beginPath();
+    for (let i = 0; i <= Math.min(n, Math.floor(upto)); i++) {
+      const p = pos[i % n];
+      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
+  for (const p of pos) {
+    if (lt < p.seen) continue;
+    const since = ((lt - p.seen) % (Math.PI * 2 / speed));
+    const glow = Math.exp(-since * 2.2);
+    ctx.globalAlpha = alpha * glow * 0.5;
+    ctx.fillStyle = p.b.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 14 + 26 * glow, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- línea de tiempo de un proyecto ----------
+function drawTimeline(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const y = CY + 30, x0 = 150, x1 = 930, n = 5;
+  const xs = Array.from({ length: n }, (_, i) => lerp(x0, x1, i / (n - 1)));
+  const head = lerp(x0, xs[3], easeInOut((lt - 0.4) / 2.4));
+  const draw = easeOut(lt / 0.6);
+  ctx.lineCap = "round";
+  ctx.globalAlpha = alpha; ctx.strokeStyle = w.th.grid; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(lerp(x0, x1, draw), y); ctx.stroke();
+  ctx.strokeStyle = PULSE;
+  ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(head, y); ctx.stroke();
+  xs.forEach((x, i) => {
+    const k = easeBack((lt - 0.15 - i * 0.1) / 0.4);
+    if (k <= 0) return;
+    const done = head >= x - 1 && i < 3;
+    const current = i === 3 && head >= x - 1;
+    const color = done ? PULSE : current ? AMBER : w.th.mist;
+    // tarjeta
+    const up = i % 2 === 0;
+    const cw = 190 * k, ch = 118 * k;
+    const cy = up ? y - 90 - ch : y + 90;
+    ctx.globalAlpha = alpha * (done || current ? 1 : 0.6);
+    ctx.strokeStyle = w.th.cardLine; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, up ? y - 26 : y + 26); ctx.lineTo(x, up ? cy + ch : cy); ctx.stroke();
+    card(ctx, w, x - cw / 2, cy, cw, ch, current ? AMBER : undefined, current ? 4 : 2);
+    ctx.fillStyle = color;
+    roundRect(ctx, x - cw / 2 + 16 * k, cy + 16 * k, 70 * k, 22 * k, 11 * k); ctx.fill();
+    bars(ctx, w, x - cw / 2 + 16 * k, cy + 52 * k, [150 * k, 100 * k], 12 * k, 10 * k);
+    for (let j = 0; j < 3; j++) {
+      ctx.fillStyle = w.th.pal[(i * 3 + j * 4) % w.th.pal.length];
+      ctx.beginPath(); ctx.arc(x + cw / 2 - (20 + j * 18) * k, cy + 27 * k, 8 * k, 0, Math.PI * 2); ctx.fill();
+    }
+    // hito
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = done ? PULSE : w.th.bg;
+    ctx.beginPath(); ctx.arc(x, y, 20 * k, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.stroke();
+    if (done) {
+      ctx.strokeStyle = w.th.bg; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(x - 8, y); ctx.lineTo(x - 2, y + 7); ctx.lineTo(x + 9, y - 7); ctx.stroke();
+    }
+    if (current) {
+      const ring = (lt * 0.9) % 1;
+      ctx.globalAlpha = alpha * (1 - ring);
+      ctx.strokeStyle = AMBER; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, 20 + ring * 40, 0, Math.PI * 2); ctx.stroke();
+    }
+  });
+  ctx.globalAlpha = alpha; ctx.fillStyle = PULSE;
+  ctx.beginPath(); ctx.arc(head, y, 12, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// ---------- juntas que se disuelven en un resumen ----------
+function drawCalendar(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const r = seeded(w, 6);
+  const X = 140, Y = 960, CW = 800, CH = 620, cols = 5, rows = 6;
+  const cellW = (CW - 60) / cols, cellH = (CH - 120) / rows;
+  const used = new Set<string>();
+  const blocks: { c: number; r: number; h: number; col: string }[] = [];
+  let guard = 0;
+  while (blocks.length < 17 && guard++ < 500) {
+    const c = Math.floor(r() * cols), rr = Math.floor(r() * rows), h = r() < 0.3 && rr < rows - 1 ? 2 : 1;
+    const keys = Array.from({ length: h }, (_, k) => `${c}-${rr + k}`);
+    if (keys.some((k) => used.has(k))) continue;
+    keys.forEach((k) => used.add(k));
+    blocks.push({ c, r: rr, h, col: w.th.pal[Math.floor(r() * w.th.pal.length)] });
+  }
+  const fadeCal = lerp(1, 0.25, easeInOut((lt - 2.6) / 0.8));
+  const calIn = easeOut(lt / 0.5);
+  ctx.globalAlpha = alpha * calIn * fadeCal;
+  card(ctx, w, X, Y, CW, CH);
+  for (let c = 0; c < cols; c++) {
+    ctx.fillStyle = w.th.cardBar;
+    roundRect(ctx, X + 30 + c * cellW + 10, Y + 34, cellW * 0.55, 18, 9); ctx.fill();
+  }
+  ctx.strokeStyle = w.th.cardLine; ctx.lineWidth = 1.5;
+  for (let rr = 0; rr <= rows; rr++) {
+    ctx.beginPath(); ctx.moveTo(X + 30, Y + 90 + rr * cellH); ctx.lineTo(X + CW - 30, Y + 90 + rr * cellH); ctx.stroke();
+  }
+  const target = { x: CX, y: CY - 10 };
+  blocks.forEach((b, i) => {
+    const appear = easeBack((lt - 0.2 - i * 0.04) / 0.35);
+    if (appear <= 0) return;
+    const bx = X + 30 + b.c * cellW + 6, by = Y + 90 + b.r * cellH + 5, bw = cellW - 12, bh = cellH * b.h - 10;
+    const dis = clamp((lt - 1.5 - i * 0.07) / 0.9);
+    if (dis <= 0) {
+      ctx.globalAlpha = alpha * fadeCal;
+      ctx.fillStyle = mix(b.col, w.th.card, 0.65);
+      roundRect(ctx, bx, by, bw * appear, bh, 8); ctx.fill();
+      ctx.fillStyle = b.col; ctx.fillRect(bx, by + 4, 5, bh - 8);
+      return;
+    }
+    const rr = seeded(w, 100 + i);
+    for (let k = 0; k < 7; k++) {
+      const sx = bx + rr() * bw, sy = by + rr() * bh;
+      const e = easeInOut(dis);
+      const px = lerp(sx, target.x + (rr() - 0.5) * 60, e), py = lerp(sy, target.y + (rr() - 0.5) * 30, e) - Math.sin(Math.PI * e) * 80;
+      ctx.globalAlpha = alpha * (1 - clamp((dis - 0.85) / 0.15));
+      ctx.fillStyle = b.col;
+      ctx.fillRect(px - 5, py - 5, 10, 10);
+    }
+  });
+  // resumen único
+  const s = easeBack((lt - 2.8) / 0.5);
+  if (s > 0) {
+    const cw = 600 * s, ch = 170 * s;
+    ctx.globalAlpha = alpha;
+    card(ctx, w, target.x - cw / 2, target.y - ch / 2, cw, ch, PULSE, 5);
+    ctx.fillStyle = PULSE;
+    ctx.beginPath(); ctx.arc(target.x - cw / 2 + 70 * s, target.y, 34 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = w.th.card; ctx.lineWidth = 7 * s;
+    ctx.beginPath(); ctx.moveTo(target.x - cw / 2 + 54 * s, target.y); ctx.lineTo(target.x - cw / 2 + 66 * s, target.y + 13 * s); ctx.lineTo(target.x - cw / 2 + 88 * s, target.y - 13 * s); ctx.stroke();
+    bars(ctx, w, target.x - cw / 2 + 130 * s, target.y - 40 * s, [380 * s, 300 * s, 220 * s], 18 * s, 12 * s);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- barras 3D ----------
+function drawBars(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const r = seeded(w, 7);
+  const ry = 0.65 + lt * 0.22, rx = -0.5;
+  const scale = 340, cy = CY + 170;
+  const P = (v: V3) => proj(rot(v, ry, rx), scale, CX, cy);
+  const items: { x: number; z: number; h: number; col: string; hi: boolean; delay: number }[] = [];
+  const g = [-0.66, -0.22, 0.22, 0.66];
+  const hiIdx = Math.floor(r() * 16);
+  g.forEach((x, i) => g.forEach((z, j) => {
+    const idx = i * 4 + j;
+    items.push({ x, z, h: idx === hiIdx ? 1.25 : 0.2 + r() * 0.65, col: idx === hiIdx ? PULSE : w.th.pal[Math.floor(r() * w.th.pal.length)], hi: idx === hiIdx, delay: r() * 0.6 });
+  }));
+  // piso
+  ctx.strokeStyle = w.th.grid; ctx.lineWidth = 1.5;
+  for (let i = -5; i <= 5; i++) {
+    const u = i * 0.2;
+    for (const [a, b] of [[{ x: u, y: 0, z: -1 }, { x: u, y: 0, z: 1 }], [{ x: -1, y: 0, z: u }, { x: 1, y: 0, z: u }]] as [V3, V3][]) {
+      const A = P(a), B = P(b);
+      ctx.globalAlpha = alpha * 0.6 * easeOut(lt / 0.6);
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    }
+  }
+  const half = 0.13;
+  const depth = (it: { x: number; z: number }) => rot({ x: it.x, y: 0, z: it.z }, ry, rx).z;
+  for (const it of [...items].sort((a, b) => depth(a) - depth(b))) {
+    const h = it.h * easeOut((lt - 0.3 - it.delay) / 1.0);
+    if (h <= 0.001) continue;
+    const c = (dx: number, dy: number, dz: number): V3 => ({ x: it.x + dx * half, y: -dy * h, z: it.z + dz * half });
+    const faces: { pts: V3[]; shade: number }[] = [
+      { pts: [c(-1, 0, 1), c(1, 0, 1), c(1, 1, 1), c(-1, 1, 1)], shade: 0.25 },
+      { pts: [c(1, 0, -1), c(-1, 0, -1), c(-1, 1, -1), c(1, 1, -1)], shade: 0.25 },
+      { pts: [c(1, 0, 1), c(1, 0, -1), c(1, 1, -1), c(1, 1, 1)], shade: 0.4 },
+      { pts: [c(-1, 0, -1), c(-1, 0, 1), c(-1, 1, 1), c(-1, 1, -1)], shade: 0.4 },
+    ];
+    const zc = (f: { pts: V3[] }) => f.pts.reduce((a, p) => a + rot(p, ry, rx).z, 0) / 4;
+    faces.sort((a, b) => zc(a) - zc(b));
+    ctx.globalAlpha = alpha;
+    for (const f of [...faces, { pts: [c(-1, 1, -1), c(1, 1, -1), c(1, 1, 1), c(-1, 1, 1)], shade: 0 }]) {
+      const q = f.pts.map(P);
+      ctx.fillStyle = f.shade ? mix(it.col, "#000000", f.shade) : it.col;
+      ctx.beginPath(); q.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); ctx.fill();
+    }
+    if (it.hi && h > 1) {
+      const top = P({ x: it.x, y: -h - 0.12, z: it.z });
+      const ring = (lt * 0.9) % 1;
+      ctx.globalAlpha = alpha * (1 - ring);
+      ctx.strokeStyle = PULSE; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(top.x, top.y, 14 + ring * 40, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- órbitas alrededor de un centro ----------
+function drawOrbits(ctx: SKRSContext2D, w: World, _t: number, lt: number, alpha: number) {
+  const scale = 380, cy = CY + 40;
+  const spin = lt * 0.25;
+  const orbits = [{ R: 0.45, tilt: 1.2, sp: 0.9, n: 3 }, { R: 0.72, tilt: 1.35, sp: 0.6, n: 4 }, { R: 1.0, tilt: 1.05, sp: 0.4, n: 5 }];
+  const grow = easeOut(lt / 0.8);
+  const ptOn = (R: number, tilt: number, th: number): V3 => {
+    const v = { x: Math.cos(th) * R * grow, y: 0, z: Math.sin(th) * R * grow };
+    const c = Math.cos(tilt), s = Math.sin(tilt);
+    return rot({ x: v.x, y: v.y * c - v.z * s, z: v.y * s + v.z * c }, spin, 0);
+  };
+  const nodes: { p: ReturnType<typeof proj>; col: string; i: number }[] = [];
+  orbits.forEach((o, oi) => {
+    ctx.strokeStyle = w.th.ink; ctx.lineWidth = 2;
+    for (let k = 0; k < 90; k++) {
+      const a = ptOn(o.R, o.tilt + oi * 0.25, (k / 90) * Math.PI * 2), b = ptOn(o.R, o.tilt + oi * 0.25, ((k + 1) / 90) * Math.PI * 2);
+      const A = proj(a, scale, CX, cy), B = proj(b, scale, CX, cy);
+      ctx.globalAlpha = alpha * (0.08 + 0.22 * clamp((a.z + 1) / 2));
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    }
+    for (let j = 0; j < o.n; j++) {
+      const th = (j / o.n) * Math.PI * 2 + lt * o.sp + oi;
+      for (let tr = 5; tr >= 0; tr--) {
+        const v = ptOn(o.R, o.tilt + oi * 0.25, th - tr * 0.06);
+        const p = proj(v, scale, CX, cy);
+        if (tr === 0) { nodes.push({ p, col: w.th.pal[(oi * 4 + j * 3) % w.th.pal.length], i: oi * 10 + j }); continue; }
+        ctx.globalAlpha = alpha * 0.25 * (1 - tr / 6);
+        ctx.fillStyle = w.th.pal[(oi * 4 + j * 3) % w.th.pal.length];
+        ctx.beginPath(); ctx.arc(p.x, p.y, 8 * p.s * (1 - tr / 8), 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  });
+  // conexiones que destellan hacia el centro
+  for (const n of nodes) {
+    const f = Math.sin(lt * 2.2 + n.i * 1.7);
+    if (f < 0.75) continue;
+    ctx.globalAlpha = alpha * (f - 0.75) * 3;
+    ctx.strokeStyle = PULSE; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(CX, cy); ctx.lineTo(n.p.x, n.p.y); ctx.stroke();
+  }
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = PULSE;
+  ctx.beginPath(); ctx.arc(CX, cy, 46 * grow, 0, Math.PI * 2); ctx.fill();
+  drawMark(ctx, CX - 26, cy - 30, 52, w.th.bg);
+  for (const n of nodes.sort((a, b) => a.p.z - b.p.z)) {
+    ctx.globalAlpha = alpha * (0.5 + 0.5 * clamp((n.p.z + 1) / 2));
+    ctx.fillStyle = n.col;
+    ctx.beginPath(); ctx.arc(n.p.x, n.p.y, 16 * n.p.s, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = w.th.bg; ctx.lineWidth = 3; ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+const VISUALS: Record<VisualKey | "mark", Visual> = {
+  sphere: (c, w, t, lt, a) => drawSphere(c, w, t, lt, a, true),
+  graph: drawGraph,
+  flow: drawFlow,
+  lattice: drawLattice,
+  chat: drawChat,
+  orgchart: drawOrgchart,
+  departure: drawDeparture,
+  radar: drawRadar,
+  timeline: drawTimeline,
+  calendar: drawCalendar,
+  bars: drawBars,
+  orbits: drawOrbits,
+  mark: drawMarkScene,
+};
 
 // ---------- guion a escenas ----------
-type Scene = { start: number; dur: number; visual: number; draw: (ctx: SKRSContext2D, lt: number) => void };
+type Scene = { start: number; dur: number; visual: VisualKey | "mark"; draw: (ctx: SKRSContext2D, lt: number) => void };
 
-function buildScenes(ctx: SKRSContext2D, s: ReelScript): { scenes: Scene[]; total: number } {
+function buildScenes(ctx: SKRSContext2D, s: ReelScript, th: Theme): { scenes: Scene[]; total: number } {
+  const vis = resolveVisuals(s.seed, s.visuals);
   const scenes: Scene[] = [];
   let t = 0;
   const words = (x: string) => x.split(/\s+/).filter(Boolean).length;
@@ -650,16 +1190,16 @@ function buildScenes(ctx: SKRSContext2D, s: ReelScript): { scenes: Scene[]; tota
   // 1) Gancho
   const hookSize = s.hook.length > 42 ? 100 : s.hook.length > 26 ? 116 : 132;
   const hook = layout(ctx, s.hook, "Instrument Serif", 400, hookSize, TEXT_TOP + 40, { accentLast: true });
-  const hookDur = Math.max(3.6, 0.5 + words(s.hook) * 0.14 + 2.3);
+  const hookDur = Math.max(3.8, 0.5 + words(s.hook) * 0.14 + 2.4);
   scenes.push({
-    start: t, dur: hookDur, visual: 0,
+    start: t, dur: hookDur, visual: vis[0],
     draw: (c, lt) => {
       const out = clamp((hookDur - lt) / 0.35);
       c.globalAlpha = easeOut(lt / 0.4) * out;
       c.fillStyle = PULSE;
       c.fillRect(MARGIN, TEXT_TOP, 120 * easeOut(lt / 0.6), 10);
       c.globalAlpha = 1;
-      drawText(c, hook, lt, hookDur, 0.35, 0.14);
+      drawText(c, hook, lt, hookDur, 0.35, 0.14, th.ink);
     },
   });
   t += hookDur;
@@ -669,9 +1209,9 @@ function buildScenes(ctx: SKRSContext2D, s: ReelScript): { scenes: Scene[]; tota
   pts.forEach((p, i) => {
     const label = `${String(i + 1).padStart(2, "0")} / ${String(pts.length).padStart(2, "0")}`;
     const block = layout(ctx, p, "Instrument Serif", 400, 88, TEXT_TOP + 70, { maxH: 500 });
-    const dur = Math.max(4.2, 0.6 + words(p) * 0.12 + 2.8);
+    const dur = Math.max(4.4, 0.6 + words(p) * 0.12 + 3.0);
     scenes.push({
-      start: t, dur, visual: 1 + (i % 3),
+      start: t, dur, visual: vis[1 + i] ?? vis[1],
       draw: (c, lt) => {
         const out = clamp((dur - lt) / 0.35);
         c.globalAlpha = easeOut(lt / 0.4) * out;
@@ -679,7 +1219,7 @@ function buildScenes(ctx: SKRSContext2D, s: ReelScript): { scenes: Scene[]; tota
         c.font = `600 34px "DM Sans"`;
         c.fillText(label, MARGIN, TEXT_TOP + 34);
         c.globalAlpha = 1;
-        drawText(c, block, lt, dur, 0.3, 0.12);
+        drawText(c, block, lt, dur, 0.3, 0.12, th.ink);
       },
     });
     t += dur;
@@ -689,9 +1229,9 @@ function buildScenes(ctx: SKRSContext2D, s: ReelScript): { scenes: Scene[]; tota
   const cta = layout(ctx, s.cta, "Instrument Serif", 400, 92, TEXT_TOP + 20, { center: true, maxH: 330 });
   const ctaDur = 4.4;
   scenes.push({
-    start: t, dur: ctaDur, visual: 4,
+    start: t, dur: ctaDur, visual: "mark",
     draw: (c, lt) => {
-      drawText(c, cta, lt, ctaDur + 10, 0.3, 0.1);
+      drawText(c, cta, lt, ctaDur + 10, 0.3, 0.1, th.ink);
       const k = easeOut((lt - 1.4) / 0.6);
       c.globalAlpha = k;
       c.fillStyle = PULSE;
@@ -792,15 +1332,16 @@ export async function renderReelMp4(script: ReelScript): Promise<Buffer> {
   ensureFonts();
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
-  const world = buildWorld(script.seed);
-  const { scenes, total } = buildScenes(ctx, script);
+  const th = script.theme === "dark" ? DARK : LIGHT;
+  const world = buildWorld(script.seed, th);
+  const { scenes, total } = buildScenes(ctx, script, th);
   const frames = Math.round(total * FPS);
   const XFADE = 0.6;
 
   const drawFrame = (f: number) => {
     const t = f / FPS;
     ctx.globalAlpha = 1;
-    ctx.fillStyle = BG;
+    ctx.fillStyle = th.bg;
     ctx.fillRect(0, 0, W, H);
     const found = scenes.findIndex((s) => t >= s.start && t < s.start + s.dur);
     const si = found === -1 ? scenes.length - 1 : found;
@@ -813,7 +1354,7 @@ export async function renderReelMp4(script: ReelScript): Promise<Buffer> {
     }
     VISUALS[sc.visual](ctx, world, t, lt, k);
     sc.draw(ctx, lt);
-    drawChrome(ctx, t, total);
+    drawChrome(ctx, t, total, th);
   };
 
   const dir = await mkdtemp(join(tmpdir(), "reel-"));
@@ -858,14 +1399,15 @@ export function renderReelFramePng(script: ReelScript, t: number): Buffer {
   ensureFonts();
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
-  const world = buildWorld(script.seed);
-  const { scenes } = buildScenes(ctx, script);
+  const th = script.theme === "dark" ? DARK : LIGHT;
+  const world = buildWorld(script.seed, th);
+  const { scenes } = buildScenes(ctx, script, th);
   const si = scenes.findIndex((s) => t >= s.start && t < s.start + s.dur);
   const sc = scenes[si === -1 ? scenes.length - 1 : si];
-  ctx.fillStyle = BG;
+  ctx.fillStyle = th.bg;
   ctx.fillRect(0, 0, W, H);
   VISUALS[sc.visual](ctx, world, t, t - sc.start, 1);
   sc.draw(ctx, t - sc.start);
-  drawChrome(ctx, t, scenes[scenes.length - 1].start + scenes[scenes.length - 1].dur);
+  drawChrome(ctx, t, scenes[scenes.length - 1].start + scenes[scenes.length - 1].dur, th);
   return canvas.toBuffer("image/png");
 }

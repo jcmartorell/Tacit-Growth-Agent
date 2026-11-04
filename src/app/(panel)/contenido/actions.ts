@@ -12,6 +12,7 @@ import { disconnect } from "@/lib/content/connections";
 import { renderReelForPost } from "@/lib/content/render";
 import { typographic } from "@/lib/typography";
 import type { PostMeta } from "@/lib/content/generate";
+import { resolveVisuals } from "@/lib/content/visuals";
 
 // Cada acción verifica la sesión: una server action es un endpoint público.
 
@@ -114,7 +115,7 @@ export async function renderReelNow(id: string) {
 }
 
 // Edita el guion de un reel: guarda los textos y vuelve a generar el video
-export async function saveReelScript(id: string, hook: string, points: string[], cta: string) {
+export async function saveReelScript(id: string, hook: string, points: string[], cta: string, visuals?: string[], theme?: string) {
   return guard(async () => {
     await requireUser();
     const one = (t: string) => typographic(String(t ?? "")).replace(/\s+/g, " ").trim();
@@ -134,7 +135,10 @@ export async function saveReelScript(id: string, hook: string, points: string[],
     const metrics = (data.metrics ?? {}) as { meta?: PostMeta };
     const meta = metrics.meta;
     if (meta?.format !== "reel" || !meta.reel) throw new Error("El post no es un reel.");
-    const nextMeta: PostMeta = { ...meta, reel: { ...meta.reel, hook: h, points: ps, cta: c }, containerId: undefined, renderedAt: undefined };
+    const vis = visuals ? resolveVisuals(meta.reel.seed, visuals) : meta.reel.visuals;
+  if (visuals && new Set(visuals).size !== visuals.length) throw new Error("Usa una animación distinta en cada parte.");
+  const th = theme === "dark" ? "dark" : theme === "light" ? "light" : meta.reel.theme;
+  const nextMeta: PostMeta = { ...meta, reel: { ...meta.reel, hook: h, points: ps, cta: c, visuals: vis, theme: th }, containerId: undefined, renderedAt: undefined };
     const upd = await db.from("posts").update({ image_url: null, metrics: { ...metrics, meta: nextMeta } }).eq("id", id);
     if (upd.error) throw new Error(upd.error.message);
     refresh();

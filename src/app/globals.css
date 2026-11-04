@@ -134,4 +134,4 @@ input[type="datetime-local"] { padding: 6px 8px; }
 .reel-pending ol { margin: 0; padding-left: 18px; color: #d5dde3; }
 .reel-script { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .reel-script label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
-.reel-script input { width: 100%; }
+.reel-script input, .reel-script select { width: 100%; }

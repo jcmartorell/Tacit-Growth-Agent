@@ -3,6 +3,7 @@ import { fmtDate } from "@/lib/data";
 import { toCdmxInput } from "@/lib/time";
 import { connectionStatus } from "@/lib/content/connections";
 import type { PostMeta } from "@/lib/content/generate";
+import { resolveVisuals } from "@/lib/content/visuals";
 import { disconnectChannel } from "./actions";
 import { DisconnectButton, GenerateButton, IgConnectForm, PostCard, type PostView } from "./client";
 
@@ -42,7 +43,7 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
       imageUrl: r.channel === "instagram" && meta?.headline ? `/api/img/${r.id}.jpg?v=${encodeURIComponent(String(r.updated_at))}` : null,
       format: meta?.format === "reel" ? "reel" : "image",
       videoUrl: meta?.format === "reel" ? r.image_url : null,
-      reel: meta?.reel ? { hook: meta.reel.hook, points: meta.reel.points, cta: meta.reel.cta } : null,
+      reel: meta?.reel ? { hook: meta.reel.hook, points: meta.reel.points, cta: meta.reel.cta, visuals: resolveVisuals(meta.reel.seed, meta.reel.visuals), theme: meta.reel.theme === "dark" ? "dark" : "light" } : null,
       processing: Boolean(meta?.containerId),
     };
   });

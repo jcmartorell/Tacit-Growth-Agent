@@ -9,7 +9,7 @@ import { getSettings } from "@/lib/settings";
 
 const BUCKET = "reels";
 // Sube este número cuando cambie el diseño del video: los reels no publicados se regeneran solos
-export const REEL_STYLE = 3;
+export const REEL_STYLE = 4;
 let bucketReady = false;
 
 async function ensureBucket() {

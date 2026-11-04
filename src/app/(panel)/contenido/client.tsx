@@ -5,6 +5,9 @@ import {
   backToDraft, connectIg, discardPost, generateNow, publishNow, renderReelNow, saveReelScript, savePost, type ConnState,
 } from "./actions";
 import { unwrap } from "@/lib/action-result";
+import { VISUAL_KEYS, VISUAL_LABELS } from "@/lib/content/visuals";
+
+type ReelView = { hook: string; points: string[]; cta: string; visuals: string[]; theme: "light" | "dark" };
 
 export type PostView = {
   id: string;
@@ -21,7 +24,7 @@ export type PostView = {
   imageUrl: string | null;
   format: "image" | "reel";
   videoUrl: string | null;
-  reel: { hook: string; points: string[]; cta: string } | null;
+  reel: ReelView | null;
   processing: boolean;
 };
 
@@ -138,30 +141,48 @@ export function PostCard({ p }: { p: PostView }) {
   );
 }
 
-function ReelScriptEditor({ id, reel, hasVideo }: { id: string; reel: { hook: string; points: string[]; cta: string }; hasVideo: boolean }) {
+function ReelScriptEditor({ id, reel, hasVideo }: { id: string; reel: ReelView; hasVideo: boolean }) {
   const [hook, setHook] = useState(reel.hook);
   const [points, setPoints] = useState<string[]>([0, 1, 2].map((i) => reel.points[i] ?? ""));
   const [cta, setCta] = useState(reel.cta);
+  const [visuals, setVisuals] = useState<string[]>(reel.visuals);
+  const [theme, setTheme] = useState<"light" | "dark">(reel.theme);
   const { pending, msg, run } = useAction();
-  const changed = hook !== reel.hook || cta !== reel.cta || points.some((x, i) => x !== (reel.points[i] ?? ""));
+  const changed = hook !== reel.hook || cta !== reel.cta || theme !== reel.theme
+    || points.some((x, i) => x !== (reel.points[i] ?? "")) || visuals.some((v, i) => v !== reel.visuals[i]);
+  const visualSelect = (i: number) => (
+    <select value={visuals[i]} onChange={(e) => setVisuals(visuals.map((v, j) => (j === i ? e.target.value : v)))}>
+      {VISUAL_KEYS.map((k) => <option key={k} value={k}>{VISUAL_LABELS[k]}</option>)}
+    </select>
+  );
   return (
     <details className="reel-script" open={!hasVideo}>
-      <summary className="small"><strong>Textos del video</strong> (editar)</summary>
+      <summary className="small"><strong>Textos y animaciones del video</strong> (editar)</summary>
       <div className="stack" style={{ marginTop: 8 }}>
         <label className="small">Gancho (primer segundo, máx. 12 palabras)
           <input value={hook} onChange={(e) => setHook(e.target.value)} />
         </label>
+        <label className="small">Animación del gancho {visualSelect(0)}</label>
         {points.map((v, i) => (
-          <label key={i} className="small">Idea {i + 1} (máx. 16 palabras)
-            <input value={v} onChange={(e) => setPoints(points.map((x, j) => (j === i ? e.target.value : x)))} />
-          </label>
+          <div key={i} className="stack" style={{ gap: 6 }}>
+            <label className="small">Idea {i + 1} (máx. 16 palabras)
+              <input value={v} onChange={(e) => setPoints(points.map((x, j) => (j === i ? e.target.value : x)))} />
+            </label>
+            <label className="small">Animación de la idea {i + 1} {visualSelect(i + 1)}</label>
+          </div>
         ))}
+        <label className="small">Fondo
+          <select value={theme} onChange={(e) => setTheme(e.target.value === "dark" ? "dark" : "light")}>
+            <option value="light">Claro</option>
+            <option value="dark">Oscuro</option>
+          </select>
+        </label>
         <label className="small">Cierre (máx. 12 palabras)
           <input value={cta} onChange={(e) => setCta(e.target.value)} />
         </label>
         <div className="row-actions">
-          <button type="button" disabled={pending || !changed} onClick={() => run(() => saveReelScript(id, hook, points, cta), "Textos guardados y video nuevo generado.")}>
-            {pending ? "Generando video… (~40 s)" : "Guardar textos y regenerar video"}
+          <button type="button" disabled={pending || !changed} onClick={() => run(() => saveReelScript(id, hook, points, cta, visuals, theme), "Cambios guardados y video nuevo generado.")}>
+            {pending ? "Generando video… (~50 s)" : "Guardar y regenerar video"}
           </button>
           {hasVideo && !changed && (
             <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => renderReelNow(id), "Video regenerado.")}>
