@@ -31,9 +31,19 @@ async function call(host: Host, path: string, token: string, init: { method?: "G
 const ig = (path: string, token: string, init?: Parameters<typeof call>[3]) => call("instagram", path, token, init);
 
 // Con un token de Meta, encuentra la cuenta de Instagram a la que da acceso
-async function findIgAccountWithFacebookToken(token: string): Promise<{ id: string; username: string | null; expiresAt: string | null }> {
+async function findIgAccountWithFacebookToken(token: string, idHint?: string): Promise<{ id: string; username: string | null; expiresAt: string | null }> {
+  // 0) Si se dio el ID de la cuenta (lo muestra Meta junto al usuario), basta con verificarlo
+  if (idHint) {
+    const info = await call("facebook", `/${VERSION}/${idHint}`, token, { params: { fields: "username" } });
+    return { id: idHint, username: (info.username as string) ?? null, expiresAt: null };
+  }
   // 1) Los permisos concedidos dicen a qué cuenta de Instagram aplican
-  const dbg = await call("facebook", `/${VERSION}/debug_token`, token, { params: { input_token: token } });
+  let dbg: Record<string, unknown>;
+  try {
+    dbg = await call("facebook", `/${VERSION}/debug_token`, token, { params: { input_token: token } });
+  } catch {
+    throw new Error("Este tipo de token no permite encontrar la cuenta sola. Escribe el ID de la cuenta de Instagram (el número que aparece en Meta junto a tu usuario).");
+  }
   const data = (dbg.data ?? {}) as { is_valid?: boolean; expires_at?: number; granular_scopes?: { scope: string; target_ids?: string[] }[] };
   if (data.is_valid === false) throw new Error("Meta dice que el token no es válido.");
   const expiresAt = data.expires_at ? new Date(data.expires_at * 1000).toISOString() : null; // 0 = no caduca
@@ -52,8 +62,9 @@ async function findIgAccountWithFacebookToken(token: string): Promise<{ id: stri
 }
 
 // Valida un token pegado desde el panel de Meta y guarda la conexión
-export async function connectInstagram(rawToken: string): Promise<IgConnection> {
+export async function connectInstagram(rawToken: string, rawIdHint = ""): Promise<IgConnection> {
   const token = rawToken.trim().replace(/\s+/g, "");
+  const idHint = rawIdHint.replace(/\D/g, "") || undefined;
   if (token.length < 20) throw new Error("El token es demasiado corto. Cópialo completo.");
   const now = new Date().toISOString();
 
@@ -75,13 +86,14 @@ export async function connectInstagram(rawToken: string): Promise<IgConnection> 
   }
   if (!conn) {
     try {
-      const acc = await findIgAccountWithFacebookToken(token);
+      const acc = await findIgAccountWithFacebookToken(token, idHint);
       conn = {
         token, host: "facebook", userId: acc.id, username: acc.username,
         connectedAt: now, refreshedAt: now, expiresAt: acc.expiresAt, lastError: null,
       };
     } catch (e) {
-      throw new Error(`No se pudo validar el token. Instagram: ${igError || "sin respuesta"}. Meta: ${(e as Error).message}`);
+      void igError;
+      throw new Error(`No se pudo validar el token: ${(e as Error).message}`);
     }
   }
   await setIg(conn);

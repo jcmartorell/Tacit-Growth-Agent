@@ -91,7 +91,7 @@ export type ConnState = { ok: boolean; message: string } | null;
 export async function connectIg(_prev: ConnState, form: FormData): Promise<ConnState> {
   await requireUser();
   try {
-    const c = await connectInstagram(String(form.get("token") ?? ""));
+    const c = await connectInstagram(String(form.get("token") ?? ""), String(form.get("igId") ?? ""));
     refresh();
     return { ok: true, message: `Instagram conectado: @${c.username ?? c.userId}` };
   } catch (e) {

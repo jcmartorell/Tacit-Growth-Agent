@@ -150,6 +150,8 @@ export function IgConnectForm() {
     <form action={action} className="stack">
       <label htmlFor="ig-token">Token de acceso de Instagram</label>
       <input id="ig-token" name="token" type="password" autoComplete="off" required placeholder="Pega aquí el token generado en Meta" />
+      <label htmlFor="ig-id">ID de la cuenta de Instagram</label>
+      <input id="ig-id" name="igId" inputMode="numeric" autoComplete="off" placeholder="El número que aparece en Meta junto a tu usuario" />
       <div><button type="submit" disabled={pending}>{pending ? "Verificando…" : "Conectar Instagram"}</button></div>
       {state && <p className={state.ok ? "alert alert-ok" : "alert alert-error"}>{state.message}</p>}
     </form>
