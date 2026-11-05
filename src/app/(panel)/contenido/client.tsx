@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import {
-  backToDraft, connectIg, discardPost, generateNow, publishNow, renderReelNow, saveReelScript, savePost, type ConnState,
+  backToDraft, connectIg, discardPost, generateNow, markPublishedManually, publishNow, renderReelNow, saveReelScript, savePost, type ConnState,
 } from "./actions";
 import { unwrap } from "@/lib/action-result";
 import { VISUAL_KEYS, VISUAL_LABELS } from "@/lib/content/visuals";
@@ -28,7 +28,7 @@ export type PostView = {
   processing: boolean;
 };
 
-const CHANNEL: Record<string, string> = { instagram: "Instagram", linkedin_personal: "LinkedIn" };
+const CHANNEL: Record<string, string> = { instagram: "Instagram", linkedin_personal: "LinkedIn · página Tacit" };
 const LIMIT: Record<string, number> = { instagram: 2200, linkedin_personal: 3000 };
 
 function useAction() {
@@ -130,6 +130,16 @@ export function PostCard({ p }: { p: PostView }) {
             <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => backToDraft(p.id))}>
               Regresar a borrador
             </button>
+          )}
+          {p.channel === "linkedin_personal" && (
+            <>
+              <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => navigator.clipboard.writeText(body), "Texto copiado. Pégalo en la página de Tacit en LinkedIn.")}>
+                Copiar texto
+              </button>
+              <button type="button" className="btn-secondary" disabled={pending} onClick={() => run(() => markPublishedManually(p.id), "Marcado como publicado.")}>
+                Marcar como publicado
+              </button>
+            </>
           )}
           <button type="button" className="btn-danger" disabled={pending} onClick={() => run(() => discardPost(p.id))}>
             Descartar

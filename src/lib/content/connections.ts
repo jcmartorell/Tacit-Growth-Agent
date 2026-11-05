@@ -21,6 +21,7 @@ export type IgConnection = {
 export type LiConnection = {
   token: string | null;
   personUrn: string | null;
+  orgUrn?: string | null;  // página de empresa donde se publica (urn:li:organization:ID)
   name: string | null;
   connectedAt: string | null;
   expiresAt: string | null;
@@ -46,6 +47,6 @@ export async function connectionStatus() {
   const [ig, li] = await Promise.all([getIg(), getLi()]);
   return {
     instagram: { connected: Boolean(ig.token), username: ig.username, expiresAt: ig.expiresAt, lastError: ig.lastError },
-    linkedin: { connected: Boolean(li.token), name: li.name, expiresAt: li.expiresAt, lastError: li.lastError },
+    linkedin: { connected: Boolean(li.token && li.orgUrn), name: li.name, expiresAt: li.expiresAt, lastError: li.lastError },
   };
 }

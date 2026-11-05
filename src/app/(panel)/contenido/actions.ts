@@ -153,6 +153,19 @@ export async function saveReelScript(id: string, hook: string, points: string[],
   });
 }
 
+// LinkedIn mientras no se pueda publicar como página: el post se publica a mano y aquí se marca
+export async function markPublishedManually(id: string) {
+  return guard(async () => {
+    await requireUser();
+    const db = createAdminClient();
+    const { error } = await db.from("posts")
+      .update({ status: "publicado", published_at: new Date().toISOString(), external_id: "manual", error: null })
+      .eq("id", id).neq("status", "publicado");
+    if (error) throw new Error(error.message);
+    refresh();
+  });
+}
+
 export type ConnState = { ok: boolean; message: string } | null;
 
 export async function connectIg(_prev: ConnState, form: FormData): Promise<ConnState> {

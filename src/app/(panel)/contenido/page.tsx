@@ -63,10 +63,10 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
       {liError && <p className="alert alert-error">LinkedIn: {liError}</p>}
       <div className="cards">
         <div className="card stack">
-          <div className="label">LinkedIn (tu perfil)</div>
+          <div className="label">LinkedIn (página de Tacit)</div>
           {conn.linkedin.connected ? (
             <>
-              <div>Conectado{conn.linkedin.name ? ` como ${conn.linkedin.name}` : ""}</div>
+              <div>Publicando en la página {conn.linkedin.name ?? ""}</div>
               <div className="muted small">Vence {fmtDate(conn.linkedin.expiresAt)}. Al vencer, reconecta.</div>
               {conn.linkedin.lastError && <p className="alert alert-error">{conn.linkedin.lastError}</p>}
               <div className="row-actions">
@@ -75,7 +75,10 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
               </div>
             </>
           ) : (
-            <div><a className="as-button" style={{ background: "var(--ink)", color: "#fff" }} href="/api/linkedin/start">Conectar LinkedIn</a></div>
+            <>
+              <div className="muted small">No se publica nada en LinkedIn hasta conectar la página. Nunca se publica en tu perfil personal. Mientras, usa «Copiar texto» y «Marcar como publicado» en cada post.</div>
+              <div><a className="as-button" style={{ background: "var(--ink)", color: "#fff" }} href="/api/linkedin/start">Conectar página de Tacit</a></div>
+            </>
           )}
         </div>
         <div className="card stack">
