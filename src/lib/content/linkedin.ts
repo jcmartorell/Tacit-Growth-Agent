@@ -8,7 +8,7 @@ import { publicEnv } from "@/lib/env";
 
 const OAUTH = (process.env.LINKEDIN_OAUTH_BASE || "https://www.linkedin.com").replace(/\/+$/, "");
 const API = (process.env.LINKEDIN_API_BASE || "https://api.linkedin.com").replace(/\/+$/, "");
-const VERSION = process.env.LINKEDIN_API_VERSION?.trim() || "202509";
+const VERSION = process.env.LINKEDIN_API_VERSION?.trim() || "202605";
 export const LI_SCOPES = process.env.LINKEDIN_SCOPES?.trim() || "w_organization_social rw_organization_admin";
 
 export const LI_PAGE_PENDING =
