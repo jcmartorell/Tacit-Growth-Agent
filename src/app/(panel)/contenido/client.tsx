@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import {
-  backToDraft, connectIg, discardPost, generateNow, markPublishedManually, publishNow, renderReelNow, saveReelScript, savePost, type ConnState,
+  backToDraft, connectIg, discardPost, generateNow, markPublishedManually, publishNow, renderReelNow, saveReelScript, savePost, setLinkedInMedia, type ConnState,
 } from "./actions";
 import { unwrap } from "@/lib/action-result";
 import { VISUAL_KEYS, VISUAL_LABELS } from "@/lib/content/visuals";
@@ -23,6 +23,8 @@ export type PostView = {
   pillar: string | null;
   imageUrl: string | null;
   format: "image" | "reel";
+  video: boolean;                                 // lleva video (reel o LinkedIn con video)
+  liMedia: "image" | "video" | "none" | null;     // solo LinkedIn
   videoUrl: string | null;
   reel: ReelView | null;
   processing: boolean;
@@ -70,10 +72,23 @@ export function PostCard({ p }: { p: PostView }) {
       {p.error && <p className="alert alert-error">{p.error}</p>}
 
       {p.processing && p.status === "aprobado" && (
-        <p className="alert alert-ok">Instagram está procesando el video; se publica en la siguiente revisión (máximo 1 hora).</p>
+        <p className="alert alert-ok">{p.channel === "instagram" ? "Instagram" : "LinkedIn"} está procesando el video; se publica en la siguiente revisión (máximo 1 hora).</p>
+      )}
+      {p.liMedia && editable && (
+        <div className="row-actions small">
+          <span>En LinkedIn va con:</span>
+          {(["image", "video", "none"] as const).map((m) => (
+            <label key={m} className="check" style={{ fontSize: 14 }}>
+              <input type="radio" name={`li-${p.id}`} checked={p.liMedia === m} disabled={pending}
+                onChange={() => run(() => setLinkedInMedia(p.id, m), m === "video" ? "Video generado." : "Guardado.")} />
+              {m === "image" ? "Imagen" : m === "video" ? "Video" : "Solo texto"}
+            </label>
+          ))}
+          {pending && <span className="muted">Guardando… si elegiste video, tarda ~1 min.</span>}
+        </div>
       )}
       <div className="post-grid">
-        {p.format === "reel" && (
+        {p.video && (
           p.videoUrl ? (
             <video src={p.videoUrl} className="post-img" style={{ aspectRatio: "9 / 16" }} controls playsInline preload="metadata" />
           ) : (
@@ -90,7 +105,7 @@ export function PostCard({ p }: { p: PostView }) {
           <img src={p.imageUrl} alt="Imagen del post" className="post-img" loading="lazy" />
         )}
         <div className="stack" style={{ flex: 1 }}>
-          {p.format === "reel" && p.reel && editable && <ReelScriptEditor id={p.id} reel={p.reel} hasVideo={Boolean(p.videoUrl)} />}
+          {p.video && p.reel && editable && <ReelScriptEditor id={p.id} reel={p.reel} hasVideo={Boolean(p.videoUrl)} />}
           {editable && p.format === "reel" && <span className="small muted">Texto de la publicación (caption)</span>}
           {editable ? (
             <>

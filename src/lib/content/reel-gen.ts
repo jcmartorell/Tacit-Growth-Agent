@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateJson } from "@/lib/llm";
-import type { GrowthSettings } from "@/lib/settings";
+import { getSettings, type GrowthSettings } from "@/lib/settings";
 import { nextSlots } from "@/lib/time";
 import { typographic } from "@/lib/typography";
 import { resolveVisuals, VISUAL_KEYS, VISUALS_INFO } from "@/lib/content/visuals";
@@ -164,4 +164,49 @@ export async function generateReels(s: GrowthSettings): Promise<GenerateSummary>
     }
   }
   return sum;
+}
+
+// Guion de video a partir de un post ya escrito (posts de LinkedIn con video)
+const SCRIPT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["gancho", "idea_1", "idea_2", "idea_3", "cierre", "visual_gancho", "visual_1", "visual_2", "visual_3"],
+  properties: Object.fromEntries(
+    ["gancho", "idea_1", "idea_2", "idea_3", "cierre", "visual_gancho", "visual_1", "visual_2", "visual_3"]
+      .map((k) => [k, (SCHEMA.properties as Record<string, unknown>)[k]]),
+  ),
+};
+type ScriptGen = Omit<ReelGen, "tema" | "caption">;
+
+export async function scriptFromPost(body: string, lang: "es" | "en"): Promise<NonNullable<PostMeta["reel"]>> {
+  const s = await getSettings();
+  const langRule = lang === "es"
+    ? "IDIOMA OBLIGATORIO: español de México en todos los campos."
+    : "MANDATORY LANGUAGE: natural US English in every field, even though these instructions are in Spanish.";
+  const g = await generateJson<ScriptGen>({
+    agent: "reels",
+    system: [
+      langRule,
+      "Conviertes un post de LinkedIn de Tacit en el guion de un video corto de texto animado, sin voz, que acompaña al post.",
+      `Qué es Tacit: ${s.tacitContext}`,
+      "Gancho que detenga el scroll, tres ideas cortas que resuman el post y un cierre. Sin emojis, sin signos de exclamación, sin inventar cifras.",
+      "Para cada parte eliges una animación distinta que ilustre lo que dice el texto.",
+      langRule,
+    ].join("\n\n"),
+    prompt: `Post:\n${body.slice(0, 3000)}\n\nEscribe el guion del video.`,
+    schema: SCRIPT_SCHEMA,
+    maxTokens: 900,
+    detail: { from: "linkedin", lang },
+  });
+  const ideas = [g.idea_1, g.idea_2, g.idea_3].map((i) => limitWords(i, 14)).filter(Boolean);
+  if (!g.gancho || ideas.length < 3 || !g.cierre) throw new Error("El guion del video salió incompleto.");
+  const seed = Math.floor(Math.random() * 1000);
+  return {
+    hook: limitWords(g.gancho, 9),
+    points: ideas,
+    cta: limitWords(g.cierre, 10),
+    seed,
+    visuals: resolveVisuals(seed, [g.visual_gancho, g.visual_1, g.visual_2, g.visual_3]),
+    theme: seed % 2 ? "dark" : "light",
+  };
 }

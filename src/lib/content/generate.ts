@@ -22,7 +22,15 @@ export type PostMeta = {
   renderedAt?: string;
   style?: number;       // versión del estilo de video con que se generó
   music?: string;       // música con que se generó
+  liMedia?: LiMedia;    // LinkedIn: qué acompaña al texto (por defecto imagen)
+  liVideoUrn?: string;  // LinkedIn: video ya subido que LinkedIn está procesando
 };
+
+export type LiMedia = "image" | "video" | "none";
+export const liMediaOf = (m?: PostMeta) => m?.liMedia ?? "image";
+// El post lleva video propio: reel de Instagram o post de LinkedIn con video
+export const hasVideo = (channel: string, m?: PostMeta) =>
+  m?.format === "reel" || (channel === "linkedin_personal" && m?.liMedia === "video");
 
 type Gen = {
   tema: string;
@@ -154,13 +162,15 @@ async function generatePosts(s: GrowthSettings): Promise<GenerateSummary> {
         headline: cut(clean(g.imagen_titulo), 90),
         subline: cut(clean(g.imagen_subtitulo), 140),
       };
+      // LinkedIn alterna imagen y video; el guion del video se escribe al generarlo
+      const liMedia: LiMedia = counter % 2 === 0 ? "video" : "image";
       const rows = c.channels.map((channel) => ({
         channel,
         topic: cut(clean(g.tema), 120),
         body: channel === "instagram" ? cut(clean(g.instagram), 2100) : cut(clean(g.linkedin), 2900),
         status: "borrador",
         scheduled_at: slot.toISOString(),
-        metrics: { meta },
+        metrics: { meta: channel === "linkedin_personal" ? { ...meta, liMedia } : meta },
       }));
       const ins = await db.from("posts").insert(rows);
       if (ins.error) throw new Error(ins.error.message);

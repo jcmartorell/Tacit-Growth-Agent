@@ -134,7 +134,7 @@ export async function saveReelScript(id: string, hook: string, points: string[],
     if (data.status === "publicado") throw new Error("Este reel ya se publicó.");
     const metrics = (data.metrics ?? {}) as { meta?: PostMeta };
     const meta = metrics.meta;
-    if (meta?.format !== "reel" || !meta.reel) throw new Error("El post no es un reel.");
+    if (!meta?.reel || (meta.format !== "reel" && meta.liMedia !== "video")) throw new Error("Este post no lleva video.");
     const vis = visuals ? resolveVisuals(meta.reel.seed, visuals) : meta.reel.visuals;
   if (visuals && new Set(visuals).size !== visuals.length) throw new Error("Usa una animación distinta en cada parte.");
   const th = theme === "dark" ? "dark" : theme === "light" ? "light" : meta.reel.theme;
@@ -163,6 +163,34 @@ export async function markPublishedManually(id: string) {
       .eq("id", id).neq("status", "publicado");
     if (error) throw new Error(error.message);
     refresh();
+  });
+}
+
+// LinkedIn: elegir si el post va con imagen, video o solo texto. Con video, se genera en ese momento.
+export async function setLinkedInMedia(id: string, media: string) {
+  return guard(async () => {
+    await requireUser();
+    if (media !== "image" && media !== "video" && media !== "none") throw new Error("Opción inválida.");
+    const db = createAdminClient();
+    const { data, error } = await db.from("posts").select("id, channel, body, status, image_url, metrics").eq("id", id).single();
+    if (error || !data) throw new Error("Post no encontrado.");
+    if (data.channel !== "linkedin_personal") throw new Error("Solo aplica a posts de LinkedIn.");
+    if (data.status === "publicado") throw new Error("Este post ya se publicó.");
+    const metrics = (data.metrics ?? {}) as { meta?: PostMeta };
+    if (!metrics.meta) throw new Error("Post sin datos de contenido.");
+    const meta: PostMeta = { ...metrics.meta, liMedia: media, liVideoUrn: undefined };
+    const upd = await db.from("posts").update({ metrics: { ...metrics, meta } }).eq("id", id);
+    if (upd.error) throw new Error(upd.error.message);
+    refresh();
+    if (media === "video" && !(data.image_url ?? "").endsWith(".mp4")) {
+      try {
+        await renderReelForPost({ id, channel: data.channel, body: data.body, image_url: null, metrics: { ...metrics, meta } });
+      } catch (e) {
+        refresh();
+        throw new Error(`Guardado como video, pero no se pudo generar ahora: ${(e as Error).message}. Se reintenta solo en la siguiente hora.`);
+      }
+      refresh();
+    }
   });
 }
 

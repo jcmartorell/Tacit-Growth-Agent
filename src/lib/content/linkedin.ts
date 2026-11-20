@@ -106,10 +106,104 @@ function littleText(t: string) {
   return t.replace(/[\\|{}@\[\]()<>#*_~]/g, (c) => `\\${c}`);
 }
 
-async function publishAsOrganization(c: LiConnection & { token: string; orgUrn: string }, text: string): Promise<string> {
+async function liJson(c: { token: string }, method: string, path: string, body?: unknown) {
+  const res = await fetch(`${API}${path}`, {
+    method,
+    headers: { ...restHeaders(c.token), ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(60_000),
+    cache: "no-store",
+  });
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(`LinkedIn ${path.split("?")[0]} respondió ${res.status}: ${text.slice(0, 200)}`);
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+}
+
+async function putBytes(c: { token: string }, url: string, bytes: Uint8Array) {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${c.token}`, "Content-Type": "application/octet-stream" },
+    body: new Blob([new Uint8Array(bytes)]),
+    signal: AbortSignal.timeout(120_000),
+    cache: "no-store",
+  });
+  if (!res.ok && res.status !== 201) throw new Error(`LinkedIn (subir archivo) respondió ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  return res.headers.get("etag");
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function mediaStatus(c: { token: string }, kind: "images" | "videos", urn: string): Promise<string> {
+  const v = await liJson(c, "GET", `/rest/${kind}/${encodeURIComponent(urn)}`);
+  return String(v.status ?? "");
+}
+
+async function connected() {
+  const c = await getLi();
+  // Sin página conectada no se publica nada (una conexión vieja de perfil personal se ignora)
+  if (!c.token || !c.orgUrn) throw new Error(LI_PAGE_PENDING);
   if (c.expiresAt && new Date(c.expiresAt).getTime() < Date.now()) {
     throw new Error("El acceso a LinkedIn venció. Reconecta LinkedIn en Contenido.");
   }
+  return { ...c, token: c.token, orgUrn: c.orgUrn };
+}
+
+// Imagen: se sube y se espera a que LinkedIn la procese (segundos)
+export async function uploadLinkedInImage(jpeg: Uint8Array): Promise<string> {
+  const c = await connected();
+  const init = await liJson(c, "POST", "/rest/images?action=initializeUpload", { initializeUploadRequest: { owner: c.orgUrn } });
+  const v = init.value as { uploadUrl?: string; image?: string } | undefined;
+  if (!v?.uploadUrl || !v.image) throw new Error("LinkedIn no devolvió dónde subir la imagen.");
+  await putBytes(c, v.uploadUrl, jpeg);
+  for (let i = 0; i < 10; i++) {
+    const st = await mediaStatus(c, "images", v.image);
+    if (st === "AVAILABLE") return v.image;
+    if (st === "PROCESSING_FAILED") throw new Error("LinkedIn no pudo procesar la imagen.");
+    await sleep(1500);
+  }
+  return v.image; // normalmente ya está; si no, LinkedIn la toma al publicar
+}
+
+// Video: subida en partes; devuelve el URN. LinkedIn lo procesa después (puede tardar minutos).
+export async function uploadLinkedInVideo(mp4: Uint8Array): Promise<string> {
+  const c = await connected();
+  const init = await liJson(c, "POST", "/rest/videos?action=initializeUpload", {
+    initializeUploadRequest: { owner: c.orgUrn, fileSizeBytes: mp4.byteLength, uploadCaptions: false, uploadThumbnail: false },
+  });
+  const v = init.value as { video?: string; uploadToken?: string; uploadInstructions?: { uploadUrl: string; firstByte: number; lastByte: number }[] } | undefined;
+  if (!v?.video || !v.uploadInstructions?.length) throw new Error("LinkedIn no devolvió dónde subir el video.");
+  const etags: string[] = [];
+  for (const part of v.uploadInstructions) {
+    const etag = await putBytes(c, part.uploadUrl, mp4.subarray(part.firstByte, part.lastByte + 1));
+    if (!etag) throw new Error("LinkedIn no confirmó una parte del video.");
+    etags.push(etag);
+  }
+  await liJson(c, "POST", "/rest/videos?action=finalizeUpload", {
+    finalizeUploadRequest: { video: v.video, uploadToken: v.uploadToken ?? "", uploadedPartIds: etags },
+  });
+  return v.video;
+}
+
+// Estado del video: "listo", "procesando" o lanza error si falló
+export async function linkedInVideoReady(urn: string, waitSeconds = 40): Promise<boolean> {
+  const c = await connected();
+  const end = Date.now() + waitSeconds * 1000;
+  for (;;) {
+    const st = await mediaStatus(c, "videos", urn);
+    if (st === "AVAILABLE") return true;
+    if (st === "PROCESSING_FAILED") throw new Error("LinkedIn no pudo procesar el video.");
+    if (Date.now() > end) return false;
+    await sleep(4000);
+  }
+}
+
+// Video lleva "title"; imagen lleva "altText" (texto alternativo)
+function mediaBody(m: { id: string; title?: string }) {
+  if (!m.title) return { id: m.id };
+  return m.id.includes(":video:") ? { id: m.id, title: m.title.slice(0, 200) } : { id: m.id, altText: m.title.slice(0, 4000) };
+}
+
+async function publishAsOrganization(c: LiConnection & { token: string; orgUrn: string }, text: string, media?: { id: string; title?: string }): Promise<string> {
   const res = await fetch(`${API}/rest/posts`, {
     method: "POST",
     headers: { ...restHeaders(c.token), "Content-Type": "application/json" },
@@ -118,6 +212,7 @@ async function publishAsOrganization(c: LiConnection & { token: string; orgUrn: 
       commentary: littleText(text),
       visibility: "PUBLIC",
       distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+      ...(media ? { content: { media: mediaBody(media) } } : {}),
       lifecycleState: "PUBLISHED",
       isReshareDisabledByAuthor: false,
     }),
@@ -132,9 +227,7 @@ async function publishAsOrganization(c: LiConnection & { token: string; orgUrn: 
   return res.headers.get("x-restli-id") ?? "publicado";
 }
 
-export async function publishLinkedIn(text: string): Promise<string> {
-  const c = await getLi();
-  // Sin página conectada no se publica nada (una conexión vieja de perfil personal se ignora)
-  if (!c.token || !c.orgUrn) throw new Error(LI_PAGE_PENDING);
-  return publishAsOrganization({ ...c, token: c.token, orgUrn: c.orgUrn }, text);
+export async function publishLinkedIn(text: string, media?: { id: string; title?: string }): Promise<string> {
+  const c = await connected();
+  return publishAsOrganization(c, text, media);
 }

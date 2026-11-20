@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fmtDate } from "@/lib/data";
 import { toCdmxInput } from "@/lib/time";
 import { connectionStatus } from "@/lib/content/connections";
-import type { PostMeta } from "@/lib/content/generate";
+import { hasVideo, liMediaOf, type PostMeta } from "@/lib/content/generate";
 import { resolveVisuals } from "@/lib/content/visuals";
 import { disconnectChannel } from "./actions";
 import { DisconnectButton, GenerateButton, IgConnectForm, PostCard, type PostView } from "./client";
@@ -40,11 +40,14 @@ export default async function ContenidoPage({ searchParams }: PageProps<"/conten
       error: r.error,
       lang: meta?.lang ?? null,
       pillar: meta?.pillar ? meta.pillar.split(":")[0] : null,
-      imageUrl: r.channel === "instagram" && meta?.headline ? `/api/img/${r.id}.jpg?v=${encodeURIComponent(String(r.updated_at))}` : null,
+      imageUrl: meta?.headline && meta.format !== "reel" && (r.channel === "instagram" || liMediaOf(meta) === "image")
+        ? `/api/img/${r.id}.jpg?v=${encodeURIComponent(String(r.updated_at))}` : null,
       format: meta?.format === "reel" ? "reel" : "image",
-      videoUrl: meta?.format === "reel" ? r.image_url : null,
+      video: hasVideo(r.channel, meta),
+      liMedia: r.channel === "linkedin_personal" ? liMediaOf(meta) : null,
+      videoUrl: hasVideo(r.channel, meta) && r.image_url?.endsWith(".mp4") ? r.image_url : null,
       reel: meta?.reel ? { hook: meta.reel.hook, points: meta.reel.points, cta: meta.reel.cta, visuals: resolveVisuals(meta.reel.seed, meta.reel.visuals), theme: meta.reel.theme === "dark" ? "dark" : "light" } : null,
-      processing: Boolean(meta?.containerId),
+      processing: Boolean(meta?.containerId || meta?.liVideoUrn),
     };
   });
 

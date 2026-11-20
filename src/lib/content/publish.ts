@@ -4,8 +4,9 @@ import { publicEnv } from "@/lib/env";
 import { acquireLock, releaseLock } from "@/lib/lock";
 import { createReelContainer, publishInstagram, refreshInstagramIfNeeded, tryPublishReel } from "@/lib/content/instagram";
 import { renderReelForPost } from "@/lib/content/render";
-import type { PostMeta } from "@/lib/content/generate";
-import { publishLinkedIn } from "@/lib/content/linkedin";
+import { liMediaOf, type PostMeta } from "@/lib/content/generate";
+import { renderPostJpeg } from "@/lib/content/image";
+import { linkedInVideoReady, publishLinkedIn, uploadLinkedInImage, uploadLinkedInVideo } from "@/lib/content/linkedin";
 
 // Publica los posts aprobados cuya hora ya llegó. Corre cada hora (Vercel Cron).
 
@@ -54,7 +55,31 @@ export async function publishDue(): Promise<PublishSummary> {
         } else if (p.channel === "instagram") {
           externalId = await publishInstagram(imageUrlFor(p.id, String(p.updated_at)), p.body);
         } else {
-          externalId = await publishLinkedIn(p.body);
+          const media = liMediaOf(meta);
+          if (media === "image" && meta?.headline) {
+            const jpeg = await renderPostJpeg(meta.headline, meta.subline ?? "", meta.lang ?? "es");
+            const image = await uploadLinkedInImage(new Uint8Array(jpeg));
+            externalId = await publishLinkedIn(p.body, { id: image, title: meta.headline });
+          } else if (media === "video") {
+            // Video: generar si falta, subir una vez y publicar cuando LinkedIn termine de procesarlo
+            let urn = meta?.liVideoUrn;
+            if (!urn) {
+              const videoUrl = p.image_url && p.image_url.endsWith(".mp4") ? p.image_url : await renderReelForPost(p as never);
+              const res = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000), cache: "no-store" });
+              if (!res.ok) throw new Error(`No se pudo leer el video (${res.status}).`);
+              urn = await uploadLinkedInVideo(new Uint8Array(await res.arrayBuffer()));
+              const fresh = await db.from("posts").select("metrics").eq("id", p.id).single();
+              const m = (fresh.data?.metrics as { meta?: PostMeta } | null) ?? {};
+              await db.from("posts").update({ metrics: { ...m, meta: { ...(m.meta ?? meta), liVideoUrn: urn } } }).eq("id", p.id);
+            }
+            if (!(await linkedInVideoReady(urn))) {
+              summary.enProceso += 1; // LinkedIn sigue procesando; se publica en la siguiente revisión
+              continue;
+            }
+            externalId = await publishLinkedIn(p.body, { id: urn, title: meta?.headline || undefined });
+          } else {
+            externalId = await publishLinkedIn(p.body);
+          }
         }
         const r = await db
           .from("posts")
@@ -65,9 +90,10 @@ export async function publishDue(): Promise<PublishSummary> {
       } catch (e) {
         const msg = (e as Error).message;
         summary.errores.push(`${p.channel}: ${msg}`);
-        // Si falla, se olvida el contenedor para que un reintento cree uno nuevo
-        const m = (p.metrics as { meta?: PostMeta } | null) ?? {};
-        const meta = m.meta ? { ...m.meta, containerId: undefined } : undefined;
+        // Si falla, se olvida el contenedor o video subido para que un reintento empiece de cero
+        const fresh = await db.from("posts").select("metrics").eq("id", p.id).single();
+        const m = (fresh.data?.metrics as { meta?: PostMeta } | null) ?? (p.metrics as { meta?: PostMeta } | null) ?? {};
+        const meta = m.meta ? { ...m.meta, containerId: undefined, liVideoUrn: undefined } : undefined;
         await db.from("posts").update({ status: "error", error: msg, ...(meta ? { metrics: { ...m, meta } } : {}) }).eq("id", p.id);
       }
     }

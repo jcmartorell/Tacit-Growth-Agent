@@ -1,7 +1,8 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { renderReelMp4 } from "@/lib/content/motion";
-import type { PostMeta } from "@/lib/content/generate";
+import { hasVideo, type PostMeta } from "@/lib/content/generate";
+import { scriptFromPost } from "@/lib/content/reel-gen";
 import { getSettings } from "@/lib/settings";
 
 // Genera el MP4 de un reel y lo guarda en Supabase Storage (bucket público "reels"),
@@ -22,11 +23,23 @@ async function ensureBucket() {
   bucketReady = true;
 }
 
-type PostRow = { id: string; image_url: string | null; metrics: { meta?: PostMeta } | null };
+type PostRow = { id: string; channel?: string; body?: string; image_url: string | null; metrics: { meta?: PostMeta } | null };
 
 export async function renderReelForPost(post: PostRow): Promise<string> {
-  const meta = post.metrics?.meta;
-  if (meta?.format !== "reel" || !meta.reel) throw new Error("El post no es un reel.");
+  let meta = post.metrics?.meta;
+  const db0 = createAdminClient();
+  // Lee canal y texto si no vienen (para posts de LinkedIn con video)
+  if (!post.channel || post.body === undefined) {
+    const { data } = await db0.from("posts").select("channel, body, metrics").eq("id", post.id).single();
+    post = { ...post, channel: data?.channel, body: data?.body ?? "", metrics: (data?.metrics as PostRow["metrics"]) ?? post.metrics };
+    meta = post.metrics?.meta;
+  }
+  if (!meta || !hasVideo(post.channel ?? "", meta)) throw new Error("Este post no lleva video.");
+  if (!meta.reel) {
+    // Post de LinkedIn sin guion todavía: se escribe a partir del texto del post
+    meta = { ...meta, reel: await scriptFromPost(post.body ?? "", meta.lang) };
+  }
+  if (!meta.reel) throw new Error("Falta el guion del video.");
   await ensureBucket();
   const music = (await getSettings()).content.reels.music;
   const mp4 = await renderReelMp4({ ...meta.reel, lang: meta.lang, music });
@@ -39,7 +52,7 @@ export async function renderReelForPost(post: PostRow): Promise<string> {
 
   const upd = await db
     .from("posts")
-    .update({ image_url: url, metrics: { ...(post.metrics ?? {}), meta: { ...meta, renderedAt: new Date().toISOString(), style: REEL_STYLE, music } } })
+    .update({ image_url: url, metrics: { ...(post.metrics ?? {}), meta: { ...meta, renderedAt: new Date().toISOString(), style: REEL_STYLE, music, liVideoUrn: undefined } } })
     .eq("id", post.id);
   if (upd.error) throw new Error(upd.error.message);
   return url;
@@ -51,8 +64,8 @@ export async function renderPendingReels(max = 2): Promise<{ generados: number; 
   const music = (await getSettings()).content.reels.music;
   const { data, error } = await db
     .from("posts")
-    .select("id, image_url, metrics, scheduled_at")
-    .eq("channel", "instagram")
+    .select("id, channel, body, image_url, metrics, scheduled_at")
+    .in("channel", ["instagram", "linkedin_personal"])
     .in("status", ["borrador", "aprobado"])
     .order("scheduled_at", { ascending: true })
     .limit(60);
@@ -60,7 +73,8 @@ export async function renderPendingReels(max = 2): Promise<{ generados: number; 
   // Sin video, o con video de un diseño anterior. Nunca si Instagram ya está procesando ese video.
   const pending = (data ?? []).filter((p) => {
     const meta = (p.metrics as { meta?: PostMeta } | null)?.meta;
-    return meta?.format === "reel" && !meta.containerId && (!p.image_url || meta.style !== REEL_STYLE || (meta.music ?? "corporativo") !== music);
+    return hasVideo(p.channel as string, meta) && !meta?.containerId && !meta?.liVideoUrn
+      && (!p.image_url || meta?.style !== REEL_STYLE || (meta?.music ?? "corporativo") !== music);
   }).slice(0, max);
   const out = { generados: 0, errores: [] as string[] };
   for (const p of pending) {
